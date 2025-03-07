@@ -6,6 +6,7 @@ const HomeScreen = ({ navigation }) => {
     <View style={styles.container}>
       <Text style={styles.title}>Conversor de Audio a MIDI</Text>
       <Button title="Grabar o Subir Audio" onPress={() => navigation.navigate("Audio")} />
+      <Button title="Escanear Partitura" onPress={() => navigation.navigate("Photo")} />
       <Button title="Ver Conversiones" onPress={() => navigation.navigate("Conversions")} />
     </View>
   );
