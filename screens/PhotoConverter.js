@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Button, Image, StyleSheet, Alert } from 'react-native';
+import { View, Button, Image, StyleSheet, Alert, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 
 export default function PhotoConverter() {
     const [image, setImage] = useState(null);
+    const [musicXml, setMusicXml] = useState(null);
 
     useEffect(() => {
         (async () => {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Sorry, we need camera roll permissions to make this work!');
+            if (Platform.OS !== 'web') {
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (status !== 'granted') {
+                    Alert.alert('Sorry, we need media library permissions to make this work!');
+                }
             }
         })();
     }, []);
@@ -20,30 +23,29 @@ export default function PhotoConverter() {
             Alert.alert('No image selected!');
             return;
         }
-
-        console.log('Uploading image:', uri);
-
-        let filename = uri.split('/').pop();
-        let match = /\.(\w+)$/.exec(filename);
-        let type = match ? `image/${match[1]}` : `image`;
-
-        let formData = new FormData();
-        formData.append('photo', { uri, name: filename, type });
-
+    
+        // Obtener el archivo desde el URI de la imagen
+        const filename = uri.split('/').pop(); // Obtiene el nombre del archivo
+        const fileType = 'image/jpeg'; // Define el tipo de archivo, cambia si es diferente
+    
         try {
-            let response = await fetch('http://localhost:8081/upload', {
+            const file = await fetch(uri);  // Obtener el archivo desde la URI
+            const blob = await file.blob();  // Convertir a un Blob
+    
+            const formData = new FormData();
+            formData.append('photo', blob, filename);  // Adjuntar el Blob al FormData
+    
+            // Hacer la solicitud POST
+            let response = await fetch('http://localhost:5000/upload', {
                 method: 'POST',
-                body: formData,
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
+                body: formData,  // Enviar el FormData
             });
-
+    
             let result = await response.json();
-            if (result.success) {
+            if (response.ok) {
                 Alert.alert('Image uploaded successfully!');
                 console.log('Upload result:', result);
-                // Handle the result (e.g., download the MIDI or MusicXML file)
+                downloadMusicXml(result.musicXmlUrl);  // Descargar MusicXML
             } else {
                 Alert.alert('Image upload failed!');
                 console.log('Upload failed:', result);
@@ -53,25 +55,63 @@ export default function PhotoConverter() {
             console.error('Upload error:', error);
         }
     };
+    
+
+    const downloadMusicXml = async (url) => {
+        try {
+            const { uri } = await FileSystem.downloadAsync(
+                url,
+                FileSystem.documentDirectory + 'music.xml'
+            );
+            setMusicXml(uri);
+            Alert.alert('MusicXML file downloaded successfully!');
+            console.log('MusicXML file downloaded to:', uri);
+        } catch (error) {
+            Alert.alert('An error occurred while downloading the MusicXML file.');
+            console.error('Download error:', error);
+        }
+    };
 
     const pickImage = async () => {
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 1,
-        });
+        let result;
+        
+        if (Platform.OS === 'web') {
+            const inputElement = document.createElement('input');
+            inputElement.type = 'file';
+            inputElement.accept = 'image/*';
+            inputElement.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const uri = URL.createObjectURL(file);
+                    setImage(uri);
+                    uploadImage(uri);
+                }
+            };
+            inputElement.click();
+        } else {
+            result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [4, 3],
+                quality: 1,
+            });
 
-        console.log('Image picker result:', result);
+            console.log('Image picker result:', result);
 
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-            const uri = result.assets[0].uri;
-            setImage(uri);
-            uploadImage(uri);
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                const uri = result.assets[0].uri;
+                setImage(uri);
+                uploadImage(uri);
+            }
         }
     };
 
     const takePhoto = async () => {
+        if (Platform.OS === 'web') {
+            Alert.alert('Camera functionality is not supported on the web.');
+            return;
+        }
+
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
             Alert.alert('Sorry, we need camera permissions to make this work!');
@@ -95,9 +135,10 @@ export default function PhotoConverter() {
 
     return (
         <View style={styles.container}>
-            <Button title="Pick an image from camera roll" onPress={pickImage} />
+            <Button title="Pick an image from gallery" onPress={pickImage} />
             <Button title="Take a photo" onPress={takePhoto} />
             {image && <Image source={{ uri: image }} style={styles.image} />}
+            {musicXml && <Button title="Open MusicXML" onPress={() => console.log('Open MusicXML file:', musicXml)} />}
         </View>
     );
 }

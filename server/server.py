@@ -1,9 +1,8 @@
 import os
+import subprocess
 from flask import Flask, request, jsonify, send_from_directory
-from basic_pitch import ICASSP_2022_MODEL_PATH
-from basic_pitch.inference import predict_and_save
-import soundfile as sf
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:8081"])
@@ -27,43 +26,45 @@ def save_file_with_unique_name(file):
     file.save(file_path)
     return file_path, unique_filename
 
-@app.route('/convert', methods=['POST'])
-def convert():
-    if 'audio' not in request.files:
-        print("No se encontró el archivo en la solicitud.")
+@app.route('/upload', methods=['POST'])
+def upload():
+    if 'photo' not in request.files:
         return jsonify({"error": "No file part"}), 400
-    
-    audio_file = request.files['audio']
-    if audio_file.filename == '':
-        print("El archivo está vacío o no se seleccionó.")
+
+    photo_file = request.files['photo']
+    if photo_file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
-    print(f"Archivo recibido: {audio_file.filename}")
-    # Aquí agregarías el proceso de conversión, solo para demostración
-    return jsonify({"midi_file": "https://path_to_midi_file.mid"})
+    # Asegurarse de que el nombre del archivo sea seguro
+    filename = secure_filename(photo_file.filename)
 
+    # Si no tiene extensión, agregar .jpg como extensión predeterminada
+    if not filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+        filename = f"{filename}.jpg"
 
-def preprocess_audio(input_audio_path):
-    audio, sr = sf.read(input_audio_path)
-    if len(audio.shape) > 1:
-        audio = audio.mean(axis=1)  # Convertir a mono si es estéreo
-    sf.write(input_audio_path, audio, sr)
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
 
+    # Guardar el archivo
+    photo_file.save(file_path)
 
-def transcribe_audio_to_midi(input_audio_path, output_midi_dir):
-    os.makedirs(output_midi_dir, exist_ok=True)
-    predict_and_save(
-        [input_audio_path],
-        output_directory=output_midi_dir,
-        save_midi=True,
-        sonify_midi=False,
-        save_model_outputs=False,
-        save_notes=False,
-        model_or_model_path=ICASSP_2022_MODEL_PATH
-    )
-    midi_filename = os.path.basename(input_audio_path).replace(".wav", "_basic_pitch.mid")
-    return os.path.join(output_midi_dir, midi_filename)
+    # Ahora convierte la imagen a MusicXML usando Audiveris
+    try:
+        musicxml_path = convert_image_to_musicxml(file_path)
+        return jsonify({"success": True, "musicXmlUrl": f'http://localhost:5000/uploads/{os.path.basename(musicxml_path)}'})
+    except Exception as e:
+        return jsonify({"error": f"Failed to convert image to MusicXML: {str(e)}"}), 500
 
+def convert_image_to_musicxml(image_path):
+    # Convertir la imagen a MusicXML usando Audiveris
+    output_file = image_path.replace('.jpg', '.xml').replace('.png', '.xml')
+    
+    # Comando para ejecutar Audiveris con el archivo .bat
+    try:
+        # Cambia la ruta de 'audiveris.bat' por la ruta real de tu archivo .bat
+        subprocess.run(['C:/Program Files/Audiveris/bin/Audiveris.bat', '--batch', image_path, '--output', output_file], check=True)
+        return output_file
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"Error during OCR processing: {str(e)}")
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
