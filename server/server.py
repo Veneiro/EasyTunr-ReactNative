@@ -1,15 +1,29 @@
 import os
 import subprocess
+from dotenv import dotenv_values
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from flask_pymongo import PyMongo
+from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:8081"])
+CORS(app, origins=["*"])
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+config = dotenv_values(".env")
+
+app.config["MONGO_URI"] = config["MONGO_URI"]
+
+mongo = PyMongo(app)
+
+@app.route('/users', methods=['GET'])
+def getUses():
+    users = mongo.db.users.find()
+    return jsonify({"users": users})
 
 # Guardar archivo con un nombre único
 def save_file_with_unique_name(file):
@@ -49,26 +63,32 @@ def upload():
 
     # Ahora convierte la imagen a MusicXML usando Audiveris
     try:
-        musicxml_path = convert_image_to_musicxml(file_path)
-        return jsonify({"success": True, "musicXmlUrl": f'http://localhost:5000/uploads/{os.path.basename(musicxml_path)}'})
+        musicxml_file = convert_image_to_musicxml(file_path)
+        return jsonify({"success": True, "musicXmlUrl": musicxml_file})
     except Exception as e:
         return jsonify({"error": f"Failed to convert image to MusicXML: {str(e)}"}), 500
 
 def convert_image_to_musicxml(image_path):
     # Convertir la imagen a MusicXML usando Audiveris
-    output_file = image_path.replace('.jpg', '.xml').replace('.png', '.xml')
-    
+    output_folder = os.path.join(UPLOAD_FOLDER, 'conversions')
+
     # Comando para ejecutar Audiveris con el archivo .bat
     try:
         # Cambia la ruta de 'audiveris.bat' por la ruta real de tu archivo .bat
-        subprocess.run(['C:/Program Files/Audiveris/bin/Audiveris.bat', '--batch', image_path, '--output', output_file], check=True)
-        return output_file
+        subprocess.run(['C:/Program Files/Audiveris/bin/Audiveris.bat', '-batch', '-transcribe', '-export', '-output', output_folder, image_path], check=True)
+        return os.path.basename(image_path).replace('.jpg', '.omr')
     except subprocess.CalledProcessError as e:
         raise Exception(f"Error during OCR processing: {str(e)}")
 
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
+@app.route('/uploads/sheets/<filename>')
+def download_img_sheet(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/uploads/conversions/<filename>')
+def download_conversion(filename):
+    filename = secure_filename(filename)
+    upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'conversions')
+    return send_from_directory(upload_folder, filename)
 
 if __name__ == '__main__':
     app.run(debug=True)

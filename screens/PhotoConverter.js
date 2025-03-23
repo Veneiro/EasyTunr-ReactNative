@@ -57,15 +57,16 @@ export default function PhotoConverter() {
     };
     
 
-    const downloadMusicXml = async (url) => {
+    const downloadMusicXml = async (conversion_name) => {
         try {
-            const { uri } = await FileSystem.downloadAsync(
-                url,
-                FileSystem.documentDirectory + 'music.xml'
-            );
-            setMusicXml(uri);
-            Alert.alert('MusicXML file downloaded successfully!');
-            console.log('MusicXML file downloaded to:', uri);
+            const response = await fetch('http://localhost:5000/uploads/conversions/' + conversion_name);
+            if (response.ok) {
+                setMusicXml(await response.text())
+            }
+            else {
+                Alert.alert('Failed to download MusicXML file!');
+                console.error('Download failed:', response);	
+            }
         } catch (error) {
             Alert.alert('An error occurred while downloading the MusicXML file.');
             console.error('Download error:', error);
