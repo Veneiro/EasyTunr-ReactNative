@@ -6,9 +6,13 @@ from flask_cors import CORS
 from flask_pymongo import PyMongo
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token
 
 app = Flask(__name__)
 CORS(app, origins=["*"])
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -89,6 +93,32 @@ def download_conversion(filename):
     filename = secure_filename(filename)
     upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'conversions')
     return send_from_directory(upload_folder, filename)
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    if mongo.db.users.find_one({"email": email}):
+        return jsonify({"message": "El usuario ya existe"}), 400
+
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    mongo.db.users.insert_one({"email": email, "password": hashed_password})
+    return jsonify({"message": "Usuario registrado exitosamente"}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    user = mongo.db.users.find_one({"email": email})
+    if user and bcrypt.check_password_hash(user['password'], password):
+        access_token = create_access_token(identity=str(user['_id']))
+        return jsonify({"token": access_token}), 200
+
+    return jsonify({"message": "Credenciales incorrectas"}), 401
 
 if __name__ == '__main__':
     app.run(debug=True)
