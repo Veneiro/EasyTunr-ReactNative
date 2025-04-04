@@ -1,13 +1,13 @@
 import os
 import subprocess
+from bson import ObjectId
 from dotenv import dotenv_values
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_pymongo import PyMongo
-from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 from flask_bcrypt import Bcrypt
-from flask_jwt_extended import JWTManager, create_access_token
+from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required
 
 app = Flask(__name__)
 CORS(app, origins=["*"])
@@ -21,6 +21,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 config = dotenv_values(".env")
 
 app.config["MONGO_URI"] = config["MONGO_URI"]
+app.config["JWT_SECRET_KEY"] = config["JWT_SECRET_KEY"]
 
 mongo = PyMongo(app)
 
@@ -45,9 +46,16 @@ def save_file_with_unique_name(file):
     return file_path, unique_filename
 
 @app.route('/upload', methods=['POST'])
+@jwt_required()
 def upload():
+    current_user = get_jwt_identity()
+
     if 'photo' not in request.files:
         return jsonify({"error": "No file part"}), 400
+    if 'name' not in request.form:
+        return jsonify({"error": "No name part"}), 400
+    
+    name = request.form['name']
 
     photo_file = request.files['photo']
     if photo_file.filename == '':
@@ -68,6 +76,9 @@ def upload():
     # Ahora convierte la imagen a MusicXML usando Audiveris
     try:
         musicxml_file = convert_image_to_musicxml(file_path)
+
+        mongo.db.users.update_one({"_id": ObjectId(current_user)}, {"$push": {"sheets": {"name": name, "filename": filename, "musicxml": musicxml_file}}})
+
         return jsonify({"success": True, "musicXmlUrl": musicxml_file})
     except Exception as e:
         return jsonify({"error": f"Failed to convert image to MusicXML: {str(e)}"}), 500

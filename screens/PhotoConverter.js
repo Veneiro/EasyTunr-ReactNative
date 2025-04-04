@@ -5,6 +5,7 @@ import * as FileSystem from 'expo-file-system';
 
 export default function PhotoConverter() {
     const [image, setImage] = useState(null);
+    const [name, setName] = useState('');
     const [musicXml, setMusicXml] = useState(null);
 
     useEffect(() => {
@@ -34,12 +35,18 @@ export default function PhotoConverter() {
     
             const formData = new FormData();
             formData.append('photo', blob, filename);  // Adjuntar el Blob al FormData
+            formData.append('name', name);  // Adjuntar el Blob al FormData
     
             // Hacer la solicitud POST
             let response = await fetch('http://localhost:5000/upload', {
                 method: 'POST',
                 body: formData,  // Enviar el FormData
+                headers: {
+                    Authorization: 'Bearer ' + localStorage.getItem('token'),  // Incluir el token de autenticación
+                }
             });
+
+
     
             let result = await response.json();
             if (response.ok) {
@@ -136,6 +143,7 @@ export default function PhotoConverter() {
 
     return (
         <View style={styles.container}>
+            <input type='text' placeholder='Enter your name' value={name} onChange={ev => setName(ev.target.value)} />
             <Button title="Pick an image from gallery" onPress={pickImage} />
             <Button title="Take a photo" onPress={takePhoto} />
             {image && <Image source={{ uri: image }} style={styles.image} />}

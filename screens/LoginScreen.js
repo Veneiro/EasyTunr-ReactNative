@@ -15,6 +15,7 @@ const LoginScreen = ({ navigation }) => {
 
       const data = await response.json();
       if (response.ok) {
+        localStorage.setItem("token", data.token);
         Alert.alert("Login exitoso", "Bienvenido de nuevo");
         navigation.navigate("Home");
       } else {
