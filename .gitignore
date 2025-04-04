@@ -36,5 +36,4 @@ yarn-error.*
 *.tsbuildinfo
 
 server/uploads
-
 login-registration-system/*
