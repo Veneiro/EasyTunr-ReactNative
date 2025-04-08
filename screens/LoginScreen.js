@@ -4,6 +4,7 @@ import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleLogin = async () => {
     try {
@@ -19,23 +20,34 @@ const LoginScreen = ({ navigation }) => {
         Alert.alert("Login exitoso", "Bienvenido de nuevo");
         navigation.navigate("Home");
       } else {
-        Alert.alert("Error", data.message || "Credenciales incorrectas");
+        // Mostrar mensaje de error específico
+        if (data.message) {
+          setErrorMessage(data.message);
+        } else {
+          setErrorMessage("Error desconocido. Intenta nuevamente.");
+        }
       }
     } catch (error) {
       console.error("Error al iniciar sesión:", error);
-      Alert.alert("Error", "Hubo un problema al iniciar sesión.");
+      setErrorMessage("Hubo un problema al conectar con el servidor.");
     }
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Iniciar Sesión</Text>
+      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
       <TextInput
         style={styles.input}
         placeholder="Correo electrónico"
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
+        returnKeyType="next" // Cambia el botón Enter a "Siguiente"
+        onSubmitEditing={() => {
+          // Mover el foco al campo de contraseña
+          this.passwordInput.focus();
+        }}
       />
       <TextInput
         style={styles.input}
@@ -43,6 +55,11 @@ const LoginScreen = ({ navigation }) => {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        returnKeyType="done" // Cambia el botón Enter a "Hecho"
+        onSubmitEditing={handleLogin} // Llama a handleLogin al presionar Enter
+        ref={(input) => {
+          this.passwordInput = input;
+        }}
       />
       <Button title="Iniciar Sesión" onPress={handleLogin} />
       <Button
@@ -71,6 +88,11 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 10,
     borderRadius: 5,
+  },
+  error: {
+    color: "red",
+    marginBottom: 10,
+    textAlign: "center",
   },
 });
 

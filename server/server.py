@@ -45,6 +45,15 @@ def save_file_with_unique_name(file):
     file.save(file_path)
     return file_path, unique_filename
 
+@app.route('/user', methods=['GET'])
+@jwt_required()
+def get_user():
+    current_user_id = get_jwt_identity()
+    user = mongo.db.users.find_one({"_id": ObjectId(current_user_id)})
+    if user:
+        return jsonify({"email": user["email"]}), 200
+    return jsonify({"message": "Usuario no encontrado"}), 404
+
 @app.route('/upload', methods=['POST'])
 @jwt_required()
 def upload():
@@ -124,12 +133,17 @@ def login():
     email = data.get('email')
     password = data.get('password')
 
+    # Verificar si el usuario existe
     user = mongo.db.users.find_one({"email": email})
-    if user and bcrypt.check_password_hash(user['password'], password):
+    if not user:
+        return jsonify({"message": "El usuario no existe"}), 404
+
+    # Verificar si la contraseña es correcta
+    if bcrypt.check_password_hash(user['password'], password):
         access_token = create_access_token(identity=str(user['_id']))
         return jsonify({"token": access_token}), 200
 
-    return jsonify({"message": "Credenciales incorrectas"}), 401
+    return jsonify({"message": "Contraseña incorrecta"}), 401
 
 if __name__ == '__main__':
     app.run(debug=True)
