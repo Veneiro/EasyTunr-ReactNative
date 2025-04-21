@@ -33,7 +33,10 @@ export default function App() {
             const data = await response.json();
             setUser(data.email);
           } else {
-            console.error("Error al obtener el usuario:", await response.json());
+            console.error(
+              "Error al obtener el usuario:",
+              await response.json()
+            );
           }
         } catch (error) {
           console.error("Error al conectar con el servidor:", error);
@@ -49,9 +52,15 @@ export default function App() {
     // Redirigir automáticamente según el estado de `user`
     if (!loading) {
       if (user) {
-        navigationRef.current?.navigate("Home");
+        navigationRef.current?.reset({
+          index: 0,
+          routes: [{ name: "Home" }],
+        });
       } else {
-        navigationRef.current?.navigate("Login");
+        navigationRef.current?.reset({
+          index: 0,
+          routes: [{ name: "Login" }],
+        });
       }
     }
   }, [user, loading]);
@@ -62,9 +71,12 @@ export default function App() {
     setMenuVisible(false);
   };
 
-  const Header = ({ navigation }) => (
+  const Header = ({ navigation, user }) => (
     <Appbar.Header style={styles.header}>
-      <Appbar.Content title="EasyTunr" />
+      <Appbar.Content
+        title="EasyTunr"
+        onPress={() => navigation.navigate("Home")}
+      />
       {user && (
         <>
           <Appbar.Action
@@ -98,10 +110,12 @@ export default function App() {
     </Appbar.Header>
   );
 
-  const screenOptions = ({ navigation }) => ({
-    header: () => <Header navigation={navigation} />,
-    headerTitleAlign: "center",
-  });
+  const screenOptions = ({ navigation }) => {
+    return {
+      header: () => <Header navigation={navigation} user={user} />,
+      headerTitleAlign: "center",
+    };
+  };
 
   if (loading) {
     return (
@@ -113,8 +127,14 @@ export default function App() {
 
   return (
     <PaperProvider>
-      <NavigationContainer ref={navigationRef}>
-        <Stack.Navigator initialRouteName={user ? "Home" : "Login"} screenOptions={screenOptions}>
+      <NavigationContainer
+        ref={navigationRef}
+        key={user ? "logged-in" : "logged-out"}
+      >
+        <Stack.Navigator
+          initialRouteName={user ? "Home" : "Login"}
+          screenOptions={screenOptions}
+        >
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="Home" component={HomeScreen} />
