@@ -38,7 +38,7 @@ export default function PhotoConverter() {
             formData.append('name', name);  // Adjuntar el Blob al FormData
     
             // Hacer la solicitud POST
-            let response = await fetch('http://localhost:5000/upload', {
+            let response = await fetch('http://localhost:5000/upload/photo', {
                 method: 'POST',
                 body: formData,  // Enviar el FormData
                 headers: {

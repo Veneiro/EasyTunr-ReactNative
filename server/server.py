@@ -24,6 +24,7 @@ app.config["MONGO_URI"] = config["MONGO_URI"]
 app.config["JWT_SECRET_KEY"] = config["JWT_SECRET_KEY"]
 
 mongo = PyMongo(app)
+audiveris_route = 'C:/Program Files/Audiveris/Audiveris.exe'
 
 @app.route('/users', methods=['GET'])
 def getUses():
@@ -74,7 +75,7 @@ def get_user():
         return jsonify({"email": user["email"]}), 200
     return jsonify({"message": "Usuario no encontrado"}), 404
 
-@app.route('/upload', methods=['POST'])
+@app.route('/upload/audio', methods=['POST'])
 @jwt_required()
 def upload():
     current_user = get_jwt_identity()
@@ -103,6 +104,55 @@ def upload():
         return jsonify({"success": True, "musicXmlUrl": musicxml_file}), 200
     except Exception as e:
         return jsonify({"error": f"Error al convertir el audio: {str(e)}"}), 500
+
+@app.route('/upload/photo', methods=['POST'])
+@jwt_required()
+def uploadPhoto():
+    current_user = get_jwt_identity()
+
+    if 'photo' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    if 'name' not in request.form:
+        return jsonify({"error": "No name part"}), 400
+    
+    name = request.form['name']
+
+    photo_file = request.files['photo']
+    if photo_file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    # Asegurarse de que el nombre del archivo sea seguro
+    filename = secure_filename(photo_file.filename)
+
+    # Si no tiene extensión, agregar .jpg como extensión predeterminada
+    if not filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+        filename = f"{filename}.jpg"
+
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+    # Guardar el archivo
+    photo_file.save(file_path)
+
+    # Ahora convierte la imagen a MusicXML usando Audiveris
+    try:
+        musicxml_file = convert_image_to_musicxml(file_path)
+
+        mongo.db.users.update_one({"_id": ObjectId(current_user)}, {"$push": {"sheets": {"name": name, "filename": filename, "musicxml": musicxml_file}}})
+
+        return jsonify({"success": True, "musicXmlUrl": musicxml_file})
+    except Exception as e:
+        return jsonify({"error": f"Failed to convert image to MusicXML: {str(e)}"}), 500
+
+def convert_image_to_musicxml(image_path):
+    # Convertir la imagen a MusicXML usando Audiveris
+    output_folder = os.path.join(UPLOAD_FOLDER, 'conversions')
+
+    # Comando para ejecutar Audiveris con el archivo .bat
+    try:
+        subprocess.run([audiveris_route, '-batch', '-transcribe', '-export', '-output', output_folder, image_path], check=True)
+        return os.path.basename(image_path).replace('.jpg', '.omr')
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"Error during OCR processing: {str(e)}")
 
 def convert_audio_to_musicxml(audio_path):
     # Implementa la lógica para convertir audio a MusicXML
