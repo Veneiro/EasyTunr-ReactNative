@@ -52,7 +52,8 @@ export default function PhotoConverter() {
             if (response.ok) {
                 Alert.alert('Image uploaded successfully!');
                 console.log('Upload result:', result);
-                downloadMusicXml(result.musicXmlUrl);  // Descargar MusicXML
+                navigation.navigate("Conversions");
+                //downloadMusicXml(result.musicXmlUrl);  // Descargar MusicXML
             } else {
                 Alert.alert('Image upload failed!');
                 console.log('Upload failed:', result);
