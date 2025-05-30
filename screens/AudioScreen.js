@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import { View, Text, Button, StyleSheet, Alert, Platform } from "react-native";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AudioScreen = ({ navigation }) => {
   const [recording, setRecording] = useState(null);
   const [audioUri, setAudioUri] = useState(null);
-  const [audioType, setAudioType] = useState("audio/m4a"); // default para grabaciones
+  const [audioType, setAudioType] = useState("audio/m4a");
 
   const startRecording = async () => {
     try {
@@ -37,8 +38,9 @@ const AudioScreen = ({ navigation }) => {
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       setAudioUri(uri);
-      setAudioType("audio/m4a"); // o ajusta a "audio/x-m4a" si lo requiere el backend
+      setAudioType("audio/m4a");
       setRecording(null);
+      console.log("Archivo grabado en:", uri);
     } catch (error) {
       console.error("Error al detener grabación", error);
       Alert.alert("Error", "No se pudo detener la grabación.");
@@ -48,14 +50,15 @@ const AudioScreen = ({ navigation }) => {
   const pickAudioFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "audio/*" });
-      if (result.type === "success") {
-        setAudioUri(result.uri);
-        // Deducimos el tipo MIME básico (puedes mejorarlo si lo necesitas)
-        const ext = result.name.split('.').pop().toLowerCase();
-        const mimeType = ext === 'mp3' ? 'audio/mpeg' :
-                         ext === 'wav' ? 'audio/wav' :
-                         ext === 'm4a' ? 'audio/m4a' :
-                         'audio/*';
+      if (!result.canceled) {
+        console.log("Archivo seleccionado:", result);
+        setAudioUri(result.assets[0].uri);
+        const ext = result.assets[0].name.split('.').pop().toLowerCase();
+        const mimeType =
+          ext === 'mp3' ? 'audio/mpeg' :
+          ext === 'wav' ? 'audio/wav' :
+          ext === 'm4a' ? 'audio/m4a' :
+          'audio/*';
         setAudioType(mimeType);
       }
     } catch (error) {
@@ -64,43 +67,59 @@ const AudioScreen = ({ navigation }) => {
     }
   };
 
-  const convertToMusicXml = async () => {
-    if (!audioUri) {
+  const uploadAudio = async (uri) => {
+    if (!uri) {
       Alert.alert("Error", "No hay archivo grabado ni seleccionado.");
       return;
     }
 
     try {
+      const token = await AsyncStorage.getItem("token");
+      if (!token) {
+        Alert.alert("Error", "No se encontró un token de autenticación.");
+        return;
+      }
+
+      // Obtener el archivo desde la URI
+      const filename = uri.split("/").pop().replace(/[^a-zA-Z0-9.-]/g, "_") || `audio-${Date.now()}.m4a`;
+      const fileType = audioType || "audio/m4a";
+
+      // Convertir la URI a Blob
+      const file = await fetch(Platform.OS === "ios" ? uri.replace("file://", "") : uri);
+      const blob = await file.blob();
+
+      // Crear FormData
       const formData = new FormData();
-      const filename = audioUri.split("/").pop();
+      formData.append("audio", blob, filename);
+      console.log("FormData preparado:", { uri, name: filename, type: fileType });
 
-      formData.append("audio", {
-        uri: audioUri,
-        name: filename,
-        type: audioType,
-      });
-
-      const response = await fetch("http://localhost:5000/upload", {
+      // Hacer la solicitud POST
+      const response = await fetch("http://localhost:5000/upload/audio", { // Reemplazar con la IP de tu servidor
         method: "POST",
         body: formData,
         headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       });
 
-      const data = await response.json();
+      const result = await response.json();
+      console.log("Respuesta del servidor:", { status: response.status, result });
+
       if (response.ok) {
         Alert.alert("Éxito", "El archivo se convirtió a MusicXML.");
         navigation.navigate("Conversions");
       } else {
-        console.error("Fallo en conversión:", data);
-        Alert.alert("Error", data.error || "Conversión fallida.");
+        console.error("Fallo en conversión:", result);
+        Alert.alert("Error", result.error || "Conversión fallida.");
       }
     } catch (error) {
-      console.error("Error en la conversión", error);
-      Alert.alert("Error", "No se pudo enviar el archivo.");
+      console.error("Error en la conversión:", error);
+      Alert.alert("Error", `No se pudo enviar el archivo: ${error.message}`);
     }
+  };
+
+  const convertToMusicXml = async () => {
+    await uploadAudio(audioUri);
   };
 
   return (
