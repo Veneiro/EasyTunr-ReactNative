@@ -228,7 +228,7 @@ def login():
     # Verificar si la contraseña es correcta
     if bcrypt.check_password_hash(user['password'], password):
         access_token = create_access_token(identity=str(user['_id']))
-        return jsonify({"token": access_token}), 200
+        return jsonify({"token": access_token, "email": email}), 200
 
     return jsonify({"message": "Contraseña incorrecta"}), 401
 

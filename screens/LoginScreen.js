@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
 
-const LoginScreen = ({ navigation }) => {
+const LoginScreen = ({ navigation, onLoginSuccess }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -18,7 +18,7 @@ const LoginScreen = ({ navigation }) => {
       if (response.ok) {
         localStorage.setItem("token", data.token);
         Alert.alert("Login exitoso", "Bienvenido de nuevo");
-        navigation.navigate("Home");
+        onLoginSuccess(data.email);
       } else {
         // Mostrar mensaje de error específico
         if (data.message) {
