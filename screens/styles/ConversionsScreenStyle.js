@@ -1,0 +1,140 @@
+import { StyleSheet } from "react-native";
+
+const BG = "#F5F6FA";
+const PRIMARY = "#6C63FF";
+const ACCENT = "#FF6584";
+const DARK = "#232946";
+
+export default StyleSheet.create({
+  container: {
+    flexGrow: 1,
+    backgroundColor: BG,
+    padding: 10,
+    width: "100%",
+    alignSelf: "center",
+    // minHeight: "100vh", // 👈 asegura expansión en web
+    // overflowY: "auto", // 👈 fuerza scroll del navegador en React Native Web
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    marginBottom: 20,
+    textAlign: "center",
+    color: PRIMARY,
+    letterSpacing: 0.5,
+  },
+  row: {
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    marginBottom: 8,
+  },
+  card: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    margin: 8,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 2,
+    minWidth: 160,
+    maxWidth: "48%",
+  },
+  image: {
+    width: 340,
+    maxWidth: 340,
+    height: 380,
+    maxHeight: 380,
+    resizeMode: "contain",
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: PRIMARY,
+    opacity: 1,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+    textAlign: "center",
+    color: DARK,
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    gap: 8,
+    marginTop: 8,
+  },
+  button: {
+    backgroundColor: PRIMARY,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    flex: 1,
+    alignItems: "center",
+    marginHorizontal: 2,
+    minWidth: 0,
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 14,
+    textAlign: "center",
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+  },
+  emptyText: {
+    textAlign: "center",
+    fontSize: 16,
+    color: "#888",
+    marginTop: 20,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+    width: "100%",
+  },
+  modalBackground: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+  },
+  modalImage: {
+    width: "90vw",
+    maxWidth: 600,
+    height: "90vw",
+    maxHeight: "80vh",
+    resizeMode: "contain",
+    borderRadius: 12,
+    backgroundColor: "#fff",
+  },
+  activityIndicator: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -20 }, { translateY: -20 }],
+  },
+    audioIconContainer: {
+    width: "100%",
+    height: 150,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#eee",
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: PRIMARY,
+  },
+  audioIcon: {
+    fontSize: 64,
+  },
+});
