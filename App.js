@@ -4,12 +4,12 @@ import { createStackNavigator } from "@react-navigation/stack";
 import { View, StyleSheet, ActivityIndicator } from "react-native";
 import { Appbar, Menu, Provider as PaperProvider } from "react-native-paper";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import HomeScreen from "./screens/HomeScreen";
-import AudioScreen from "./screens/AudioScreen";
-import ConversionsScreen from "./screens/ConversionsScreen";
-import PhotoConverter from "./screens/PhotoConverter";
-import LoginScreen from "./screens/LoginScreen";
-import RegisterScreen from "./screens/RegisterScreen";
+import HomeScreen from "./screens/js/HomeScreen";
+import AudioScreen from "./screens/js/AudioScreen";
+import ConversionsScreen from "./screens/js/ConversionsScreen";
+import PhotoConverter from "./screens/js/PhotoConverter";
+import LoginScreen from "./screens/js/LoginScreen";
+import RegisterScreen from "./screens/js/RegisterScreen";
 
 const Stack = createStackNavigator();
 
@@ -24,7 +24,7 @@ export default function App() {
       const token = await AsyncStorage.getItem("token");
       console.log("Token retrieved from AsyncStorage:", token); // Depuración
       if (token) {
-        const response = await fetch("http://localhost:5000/user", {
+        const response = await fetch("http://192.168.1.13:5000/user", {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -67,7 +67,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      console.log("Logging out, removing token"); // Depuración
+      console.log("Logging out, removing token");
       await AsyncStorage.removeItem("token");
       setUser(null);
       setMenuVisible(false);
@@ -81,23 +81,28 @@ export default function App() {
   };
 
   const Header = ({ navigation }) => (
-    <Appbar.Header style={styles.header}>
+    <Appbar.Header style={styles.headerContainer}>
       <Appbar.Content
-        title="EasyTunr"
+        style={styles.headerTitleCustom}
+        title="🎶 EasyTunr"
+        color="white"
         onPress={() => navigation.navigate("Home")}
       />
       {user && (
         <>
           <Appbar.Action
             icon="microphone"
+            color="#FF6584"
             onPress={() => navigation.navigate("Audio")}
           />
           <Appbar.Action
             icon="camera"
+            color="#FF6584"
             onPress={() => navigation.navigate("Photo")}
           />
           <Appbar.Action
             icon="folder"
+            color="#FF6584"
             onPress={() => navigation.navigate("Conversions")}
           />
           <Menu
@@ -106,13 +111,13 @@ export default function App() {
             anchor={
               <Appbar.Action
                 icon="account-circle"
-                color="white"
+                color="#FF6584"
                 onPress={() => setMenuVisible(true)}
               />
             }
           >
-            <Menu.Item title={`Hola, ${user}`} disabled />
-            <Menu.Item title="Cerrar Sesión" onPress={handleLogout} />
+            <Menu.Item style={styles.menuItem} title={`Hola, ${user}`} disabled />
+            <Menu.Item style={styles.menuItem} title="Cerrar Sesión" onPress={handleLogout} />
           </Menu>
         </>
       )}
@@ -122,7 +127,7 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6200ee" />
+        <ActivityIndicator size="large" color="#6C63FF" />
       </View>
     );
   }
@@ -163,13 +168,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 15,
-    backgroundColor: "#6200ee",
+    backgroundColor: "#6C63FF",
     height: 60,
   },
-  headerTitle: {
-    color: "white",
-    fontSize: 20,
+  headerTitleCustom: {
+    fontSize: 22,
     fontWeight: "bold",
+    textShadowColor: "#232946",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    overflow: "hidden",
   },
   userContainer: {
     flexDirection: "row",
