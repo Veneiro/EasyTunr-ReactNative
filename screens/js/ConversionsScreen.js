@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Alert } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ConversionsScreenView from "../views/ConversionsScreenView";
+import { apiUrl } from "../../lib/api";
+
+const getSheetKey = (item, index = 0) =>
+  item?.sheet_key || item?.musicxml || item?.omr || item?.audio || item?.filename || `sheet-${index}`;
 
 const ConversionsScreen = () => {
   const [conversions, setConversions] = useState([]);
@@ -11,7 +16,7 @@ const ConversionsScreen = () => {
     const fetchConversions = async () => {
       try {
         const token = await AsyncStorage.getItem("token");
-        const response = await fetch("http://192.168.1.13:5000/sheets", {
+        const response = await fetch(apiUrl("/sheets"), {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -20,7 +25,11 @@ const ConversionsScreen = () => {
 
         if (response.ok) {
           const data = await response.json();
-          setConversions(data.sheets);
+          const normalized = (data.sheets || []).map((sheet, index) => ({
+            ...sheet,
+            sheet_key: getSheetKey(sheet, index),
+          }));
+          setConversions(normalized);
         } else {
           Alert.alert("Error", "No se pudieron cargar las conversiones.");
         }
@@ -48,15 +57,25 @@ const ConversionsScreen = () => {
 
   const downloadFile = async (filename, type) => {
     try {
+      if (typeof document === "undefined") {
+        Alert.alert(
+          "No disponible",
+          "La descarga directa esta habilitada en web. En movil podemos agregar compartir/guardar si quieres."
+        );
+        return;
+      }
+
       const token = await AsyncStorage.getItem("token");
-      const response = await fetch(
-        `http://192.168.1.13:5000/uploads/conversions/${filename}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      const endpoint =
+        type === "AUDIO"
+          ? apiUrl(`/uploads/sheets/${filename}`)
+          : apiUrl(`/uploads/conversions/${filename}`);
+
+      const response = await fetch(endpoint, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         }
-      );
+      });
       if (response.ok) {
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -98,6 +117,67 @@ const ConversionsScreen = () => {
     setLoadingImage(false);
   }, []);
 
+  const handleDeleteSheet = useCallback((item) => {
+    Alert.alert(
+      "Eliminar partitura",
+      `¿Seguro que quieres eliminar ${item.name || item.filename || "esta partitura"}?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            setConversions((prev) => prev.filter((s) => s.sheet_key !== item.sheet_key));
+            try {
+              const token = await AsyncStorage.getItem("token");
+              const response = await fetch(
+                apiUrl(`/sheets/${encodeURIComponent(item.sheet_key)}`),
+                {
+                  method: "DELETE",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                }
+              );
+
+              if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.error || "No se pudo eliminar la partitura.");
+              }
+            } catch (error) {
+              console.error("Error al eliminar partitura:", error);
+              Alert.alert("Aviso", "Se elimino visualmente, pero no se pudo sincronizar con servidor.");
+            }
+          },
+        },
+      ]
+    );
+  }, []);
+
+  const handleReorder = useCallback(async (nextList) => {
+    setConversions(nextList);
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const response = await fetch(apiUrl("/sheets/reorder"), {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sheet_keys: nextList.map((item) => item.sheet_key),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo guardar el nuevo orden.");
+      }
+    } catch (error) {
+      console.error("Error al guardar nuevo orden:", error);
+      Alert.alert("Aviso", "Se aplico el orden en pantalla, pero no se pudo sincronizar en servidor.");
+    }
+  }, []);
+
   const handleError = useCallback(
     (error) => {
       console.error("Error al cargar la imagen:", error.nativeEvent.error);
@@ -124,6 +204,8 @@ const ConversionsScreen = () => {
       handleLoadEnd={handleLoadEnd}
       handleError={handleError}
       imageSource={imageSource}
+      onDeleteSheet={handleDeleteSheet}
+      onReorder={handleReorder}
     />
   );
 };

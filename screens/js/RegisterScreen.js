@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import RegisterScreenView from "../views/RegisterScreenView";
+import { apiUrl } from "../../lib/api";
 
 const RegisterScreen = ({ navigation }) => {
   const [email, setEmail] = useState("");
@@ -7,7 +8,7 @@ const RegisterScreen = ({ navigation }) => {
 
   const handleRegister = async () => {
     try {
-      const response = await fetch("http://192.168.1.13:5000/register", {
+      const response = await fetch(apiUrl("/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

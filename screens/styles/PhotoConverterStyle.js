@@ -1,38 +1,48 @@
 import { StyleSheet } from "react-native";
-
-const PRIMARY = "#6C63FF";
-const BG = "#F5F6FA";
-const DARK = "#232946";
+import { theme } from "./theme";
 
 export default StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
-    minHeight: "100vh",
     width: "100%",
-    maxWidth: 600,
+    maxWidth: 760,
     alignSelf: "center",
   },
+  panel: {
+    width: "100%",
+    maxWidth: 620,
+    backgroundColor: theme.colors.glass,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    borderRadius: theme.radius.lg,
+    paddingVertical: 24,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    ...theme.shadow,
+  },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: PRIMARY,
+    fontSize: 34,
+    fontWeight: "800",
+    color: theme.colors.primaryDark,
     marginBottom: 16,
     textAlign: "center",
+    letterSpacing: 0.3,
   },
   input: {
     width: "100%",
-    maxWidth: 400,
-    backgroundColor: "#fff",
-    borderRadius: 16,
+    maxWidth: 520,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
     padding: 14,
     marginBottom: 14,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
+    borderColor: theme.colors.border,
+    color: theme.colors.text,
   },
   buttonRow: {
     flexDirection: "row",
@@ -43,14 +53,16 @@ export default StyleSheet.create({
     width: "100%",
   },
   button: {
-    backgroundColor: PRIMARY,
+    backgroundColor: theme.colors.primary,
     paddingVertical: 14,
     paddingHorizontal: 18,
-    borderRadius: 30,
+    borderRadius: theme.radius.pill,
     marginHorizontal: 6,
-    minWidth: 120,
+    minWidth: 170,
+    maxWidth: 290,
+    flexGrow: 1,
     alignItems: "center",
-    elevation: 2,
+    ...theme.shadow,
     marginBottom: 8,
   },
   buttonText: {
@@ -61,12 +73,12 @@ export default StyleSheet.create({
   },
   image: {
     width: "100%",
-    maxWidth: 200,
-    height: 200,
+    maxWidth: 560,
+    height: 320,
     marginTop: 20,
-    borderRadius: 12,
+    borderRadius: theme.radius.md,
     borderWidth: 2,
-    borderColor: PRIMARY,
+    borderColor: theme.colors.primary,
     objectFit: "cover",
   },
 });

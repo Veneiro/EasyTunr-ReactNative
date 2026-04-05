@@ -1,51 +1,61 @@
 import { StyleSheet } from "react-native";
-
-const PRIMARY = "#6C63FF";
-const ACCENT = "#FF6584";
-const BG = "#F5F6FA";
-const DARK = "#232946";
+import { theme } from "./theme";
 
 export default StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
-    minHeight: "100vh",
     width: "100%",
-    maxWidth: 600,
+    maxWidth: 760,
     alignSelf: "center",
   },
+  panel: {
+    width: "100%",
+    maxWidth: 560,
+    backgroundColor: theme.colors.glass,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    borderRadius: theme.radius.lg,
+    paddingVertical: 28,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    ...theme.shadow,
+  },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: PRIMARY,
+    fontSize: 38,
+    fontWeight: "800",
+    color: theme.colors.primaryDark,
     marginBottom: 8,
     textAlign: "center",
+    letterSpacing: 0.4,
   },
   subtitle: {
-    fontSize: 16,
-    color: DARK,
-    marginBottom: 32,
+    fontSize: 17,
+    color: theme.colors.muted,
+    marginBottom: 28,
     textAlign: "center",
-    opacity: 0.8,
+    maxWidth: 560,
+    lineHeight: 24,
   },
   button: {
-    backgroundColor: PRIMARY,
+    backgroundColor: theme.colors.primary,
     paddingVertical: 16,
     paddingHorizontal: 32,
-    borderRadius: 30,
+    borderRadius: theme.radius.pill,
     alignItems: "center",
-    marginBottom: 18,
-    width: "90%",
-    minWidth: 200,
-    elevation: 2,
+    marginBottom: 14,
+    width: "100%",
+    maxWidth: 460,
+    minWidth: 220,
+    ...theme.shadow,
   },
   buttonText: {
     color: "#fff",
-    fontWeight: "bold",
+    fontWeight: "700",
     fontSize: 18,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
 });

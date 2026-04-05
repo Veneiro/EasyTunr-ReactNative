@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoginScreenView from "../views/LoginScreenView";
+import { apiUrl } from "../../lib/api";
 
 const LoginScreen = ({ navigation, onLoginSuccess }) => {
   const [email, setEmail] = useState("");
@@ -9,7 +10,7 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
 
   const handleLogin = async () => {
     try {
-      const response = await fetch("http://192.168.1.13:5000/login", {
+      const response = await fetch(apiUrl("/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

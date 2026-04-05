@@ -3,6 +3,7 @@ import { Platform, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import PhotoConverterView from "../views/PhotoConverterView";
+import { apiUrl } from "../../lib/api";
 
 export default function PhotoConverter({ navigation }) {
   const [image, setImage] = useState(null);
@@ -49,7 +50,7 @@ export default function PhotoConverter({ navigation }) {
 
     try {
       const token = await AsyncStorage.getItem("token");
-      let response = await fetch("http://192.168.1.13:5000/upload/photo", {
+      let response = await fetch(apiUrl("/upload/photo"), {
         method: "POST",
         body: formData,
         headers: {

@@ -1,8 +1,11 @@
 {
   "expo": {
-    "name": "EasyTunr",
+    "name": "🎵 EasyTunr",
     "slug": "EasyTunr",
     "version": "1.0.0",
-    "newArchEnabled": true
+    "newArchEnabled": true,
+    "web": {
+      "favicon": "./assets/favicon-note.png"
+    }
   }
 }

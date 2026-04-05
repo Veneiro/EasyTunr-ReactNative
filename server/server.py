@@ -1,8 +1,9 @@
 import os
+import json
 import subprocess
 from bson import ObjectId
 from dotenv import dotenv_values
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from flask_pymongo import PyMongo
 from werkzeug.utils import secure_filename
@@ -16,6 +17,9 @@ from flask_jwt_extended import (
 import librosa
 from music21 import stream, note, midi
 
+from omr.pipeline import OMRPipeline, OMRPipelineConfig
+from omr.musicxml import write_musicxml
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 bcrypt = Bcrypt(app)
@@ -25,13 +29,377 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-config = dotenv_values(".env")
+config = {**dotenv_values(".env"), **os.environ}
 
-app.config["MONGO_URI"] = config["MONGO_URI"]
-app.config["JWT_SECRET_KEY"] = config["JWT_SECRET_KEY"]
+app.config["MONGO_URI"] = config.get("MONGO_URI")
+app.config["JWT_SECRET_KEY"] = config.get("JWT_SECRET_KEY")
+
+if not app.config["MONGO_URI"]:
+    raise RuntimeError("MONGO_URI no esta configurada")
+
+if not app.config["JWT_SECRET_KEY"]:
+    raise RuntimeError("JWT_SECRET_KEY no esta configurada")
 
 mongo = PyMongo(app)
-audiveris_route = "C:/Program Files/Audiveris/bin/Audiveris.bat"
+
+
+def get_sheet_key(sheet):
+    for field in ("sheet_key", "musicxml", "omr", "audio", "filename", "name"):
+        value = sheet.get(field)
+        if value:
+            return str(value)
+    return ""
+
+
+def normalize_sheet(sheet):
+    normalized = {}
+    for k, v in sheet.items():
+        if isinstance(v, ObjectId):
+            normalized[k] = str(v)
+        else:
+            normalized[k] = v
+    normalized["sheet_key"] = get_sheet_key(normalized)
+    return normalized
+
+omr_config = OMRPipelineConfig(
+    engine=os.getenv("OMR_ENGINE", "custom-omr"),
+    model_weights=os.getenv("OMR_MODEL_WEIGHTS"),
+    confidence=float(os.getenv("OMR_CONFIDENCE", "0.25")),
+    device=os.getenv("OMR_DEVICE", "cpu"),
+    seq2seq_model_id=os.getenv("OMR_SEQ2SEQ_MODEL_ID"),
+    seq2seq_max_new_tokens=int(os.getenv("OMR_SEQ2SEQ_MAX_NEW_TOKENS", "256")),
+    seq2seq_num_beams=int(os.getenv("OMR_SEQ2SEQ_NUM_BEAMS", "2")),
+    staff_projection_factor=float(os.getenv("OMR_STAFF_PROJECTION_FACTOR", "0.55")),
+)
+omr_pipeline = OMRPipeline(omr_config)
+
+
+def build_openapi_spec():
+    return {
+        "openapi": "3.0.3",
+        "info": {
+            "title": "EasyTunr API",
+            "version": "0.1.0",
+            "description": "API Flask para autenticacion, carga de archivos y conversion OMR.",
+        },
+        "servers": [{"url": "http://localhost:5000", "description": "Local"}],
+        "components": {
+            "securitySchemes": {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "JWT",
+                }
+            },
+            "schemas": {
+                "AuthCredentials": {
+                    "type": "object",
+                    "required": ["email", "password"],
+                    "properties": {
+                        "email": {"type": "string", "format": "email"},
+                        "password": {"type": "string", "minLength": 6},
+                    },
+                },
+                "RegisterResponse": {
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                },
+                "LoginResponse": {
+                    "type": "object",
+                    "properties": {
+                        "token": {"type": "string"},
+                        "email": {"type": "string"},
+                    },
+                },
+                "UserResponse": {
+                    "type": "object",
+                    "properties": {"email": {"type": "string"}},
+                },
+                "SheetsResponse": {
+                    "type": "object",
+                    "properties": {
+                        "sheets": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                        }
+                    },
+                },
+                "HealthResponse": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string"},
+                        "service": {"type": "string"},
+                    },
+                },
+                "ErrorResponse": {
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                },
+            },
+        },
+        "paths": {
+            "/health": {
+                "get": {
+                    "summary": "Estado del servicio",
+                    "responses": {
+                        "200": {
+                            "description": "Servicio listo",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/HealthResponse"}
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/register": {
+                "post": {
+                    "summary": "Registrar usuario",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/AuthCredentials"}
+                            }
+                        },
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Usuario creado",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/RegisterResponse"}
+                                }
+                            },
+                        },
+                        "400": {
+                            "description": "Usuario ya existe",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+            "/login": {
+                "post": {
+                    "summary": "Iniciar sesion",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/AuthCredentials"}
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Token emitido",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/LoginResponse"}
+                                }
+                            },
+                        },
+                        "401": {
+                            "description": "Credenciales invalidas",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+            "/user": {
+                "get": {
+                    "summary": "Perfil del usuario autenticado",
+                    "security": [{"bearerAuth": []}],
+                    "responses": {
+                        "200": {
+                            "description": "Usuario autenticado",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/UserResponse"}
+                                }
+                            },
+                        },
+                        "404": {
+                            "description": "Usuario no encontrado",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+            "/users": {
+                "get": {
+                    "summary": "Listado de usuarios",
+                    "responses": {
+                        "200": {"description": "Listado devuelto"}
+                    },
+                }
+            },
+            "/upload/audio": {
+                "post": {
+                    "summary": "Convertir audio a MusicXML",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["audio"],
+                                    "properties": {
+                                        "audio": {"type": "string", "format": "binary"}
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Conversion exitosa"},
+                        "400": {"description": "Archivo ausente o invalido"},
+                    },
+                }
+            },
+            "/upload/photo": {
+                "post": {
+                    "summary": "Convertir imagen OMR a MusicXML",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["photo", "name"],
+                                    "properties": {
+                                        "photo": {"type": "string", "format": "binary"},
+                                        "name": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Conversion exitosa"},
+                        "400": {"description": "Datos faltantes"},
+                    },
+                }
+            },
+            "/sheets": {
+                "get": {
+                    "summary": "Obtener partituras del usuario",
+                    "security": [{"bearerAuth": []}],
+                    "responses": {
+                        "200": {
+                            "description": "Listado de sheets",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/SheetsResponse"}
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/uploads/sheets/{filename}": {
+                "get": {
+                    "summary": "Descargar archivo subido",
+                    "parameters": [
+                        {
+                            "name": "filename",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "Archivo servido"}},
+                }
+            },
+            "/uploads/conversions/{filename}": {
+                "get": {
+                    "summary": "Descargar conversion OMR",
+                    "security": [{"bearerAuth": []}],
+                    "parameters": [
+                        {
+                            "name": "filename",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {
+                        "200": {"description": "Archivo servido"},
+                        "403": {"description": "No autorizado"},
+                        "404": {"description": "Archivo no encontrado"},
+                    },
+                }
+            },
+        },
+    }
+
+
+SWAGGER_UI_HTML = """
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EasyTunr API Docs</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #0f172a;
+      }
+      #swagger-ui {
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.onload = function() {
+        window.ui = SwaggerUIBundle({
+          url: "/openapi.json",
+          dom_id: '#swagger-ui',
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis],
+          layout: "BaseLayout"
+        });
+      };
+    </script>
+  </body>
+</html>
+"""
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "service": "easytunr-server"}), 200
+
+
+@app.route("/openapi.json", methods=["GET"])
+def openapi_json():
+    return jsonify(build_openapi_spec())
+
+
+@app.route("/docs", methods=["GET"])
+def swagger_docs():
+    return Response(SWAGGER_UI_HTML, mimetype="text/html")
 
 
 @app.route("/users", methods=["GET"])
@@ -150,6 +518,7 @@ def uploadPhoto():
             {
                 "$push": {
                     "sheets": {
+                        "type": "photo",
                         "name": name,
                         "filename": unique_filename,
                         "omr": omr_file,
@@ -165,28 +534,24 @@ def uploadPhoto():
 
 
 def convert_image_to_musicxml(image_path):
-    # Convertir la imagen a MusicXML usando Audiveris
+    # Pipeline OMR propio: deteccion de simbolos -> notas -> MusicXML.
     output_folder = os.path.join(UPLOAD_FOLDER, "conversions")
+    os.makedirs(output_folder, exist_ok=True)
+
     base = os.path.splitext(os.path.basename(image_path))[0]
-    omr_file = f"{base}.omr"
-    mxl_file = f"{base}.mxl"
-    # Comando para ejecutar Audiveris con el archivo .bat
-    try:
-        subprocess.run(
-            [
-                audiveris_route,
-                "-batch",
-                "-transcribe",
-                "-export",
-                "-output",
-                output_folder,
-                image_path,
-            ],
-            check=True,
-        )
-        return omr_file, mxl_file
-    except subprocess.CalledProcessError as e:
-        raise Exception(f"Error during OCR processing: {str(e)}")
+    omr_file = f"{base}.omr.json"
+    mxl_file = f"{base}.musicxml"
+
+    omr_path = os.path.join(output_folder, omr_file)
+    mxl_path = os.path.join(output_folder, mxl_file)
+
+    result = omr_pipeline.transcribe(image_path)
+
+    with open(omr_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=True, indent=2)
+
+    write_musicxml(result["notes"], mxl_path, title=base)
+    return omr_file, mxl_file
 
 def convert_audio_to_musicxml(audio_path):
     #audio_path = ensure_wav(audio_path)
@@ -280,8 +645,91 @@ def get_sheets():
     current_user_id = get_jwt_identity()
     user = mongo.db.users.find_one({"_id": ObjectId(current_user_id)})
     if user and "sheets" in user:
-        return jsonify({"sheets": user["sheets"]}), 200
+        sheets = [normalize_sheet(sheet) for sheet in user["sheets"]]
+        return jsonify({"sheets": sheets}), 200
     return jsonify({"sheets": []}), 200
+
+
+@app.route("/sheets/<sheet_key>", methods=["DELETE"])
+@jwt_required()
+def delete_sheet(sheet_key):
+    current_user_id = get_jwt_identity()
+    user = mongo.db.users.find_one({"_id": ObjectId(current_user_id)})
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    sheets = user.get("sheets", [])
+    index = next((i for i, s in enumerate(sheets) if get_sheet_key(s) == sheet_key), -1)
+    if index < 0:
+        app.logger.warning("DELETE sheet not found: user=%s key=%s", current_user_id, sheet_key)
+        return jsonify({"error": "Partitura no encontrada"}), 404
+
+    target = sheets[index]
+    remaining = [s for i, s in enumerate(sheets) if i != index]
+
+    app.logger.info("Deleting sheet: user=%s key=%s name=%s", current_user_id, sheet_key, target.get("name"))
+
+    mongo.db.users.update_one(
+        {"_id": ObjectId(current_user_id)},
+        {"$set": {"sheets": remaining}},
+    )
+
+    root_uploads = app.config["UPLOAD_FOLDER"]
+    conversions_uploads = os.path.join(root_uploads, "conversions")
+    file_candidates = [
+        os.path.join(root_uploads, target.get("filename", "")),
+        os.path.join(root_uploads, target.get("audio", "")),
+        os.path.join(conversions_uploads, target.get("omr", "")),
+        os.path.join(conversions_uploads, target.get("musicxml", "")),
+    ]
+
+    for path in file_candidates:
+        if path and os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    return jsonify({"success": True, "deleted": normalize_sheet(target)}), 200
+
+
+@app.route("/sheets/reorder", methods=["PATCH"])
+@jwt_required()
+def reorder_sheets():
+    current_user_id = get_jwt_identity()
+    user = mongo.db.users.find_one({"_id": ObjectId(current_user_id)})
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    ordered_keys = payload.get("sheet_keys")
+    if not isinstance(ordered_keys, list):
+        return jsonify({"error": "sheet_keys debe ser una lista"}), 400
+
+    app.logger.info("Reordering sheets: user=%s keys=%s", current_user_id, ordered_keys)
+
+    sheets = user.get("sheets", [])
+    by_key = {get_sheet_key(sheet): sheet for sheet in sheets}
+
+    reordered = []
+    seen = set()
+    for key in ordered_keys:
+        key_str = str(key)
+        if key_str in by_key and key_str not in seen:
+            reordered.append(by_key[key_str])
+            seen.add(key_str)
+
+    for sheet in sheets:
+        key = get_sheet_key(sheet)
+        if key not in seen:
+            reordered.append(sheet)
+
+    mongo.db.users.update_one(
+        {"_id": ObjectId(current_user_id)},
+        {"$set": {"sheets": reordered}},
+    )
+
+    return jsonify({"success": True, "sheets": [normalize_sheet(s) for s in reordered]}), 200
 
 
 @app.route("/uploads/sheets/<filename>")
@@ -361,4 +809,4 @@ def login():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)

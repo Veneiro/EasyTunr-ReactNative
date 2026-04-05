@@ -3,6 +3,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { View, StyleSheet, ActivityIndicator } from "react-native";
 import { Appbar, Menu, Provider as PaperProvider } from "react-native-paper";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeScreen from "./screens/js/HomeScreen";
 import AudioScreen from "./screens/js/AudioScreen";
@@ -10,6 +11,8 @@ import ConversionsScreen from "./screens/js/ConversionsScreen";
 import PhotoConverter from "./screens/js/PhotoConverter";
 import LoginScreen from "./screens/js/LoginScreen";
 import RegisterScreen from "./screens/js/RegisterScreen";
+import { apiUrl } from "./lib/api";
+import { theme } from "./screens/styles/theme";
 
 const Stack = createStackNavigator();
 
@@ -24,7 +27,7 @@ export default function App() {
       const token = await AsyncStorage.getItem("token");
       console.log("Token retrieved from AsyncStorage:", token); // Depuración
       if (token) {
-        const response = await fetch("http://192.168.1.13:5000/user", {
+        const response = await fetch(apiUrl("/user"), {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -84,7 +87,7 @@ export default function App() {
     <Appbar.Header style={styles.headerContainer}>
       <Appbar.Content
         style={styles.headerTitleCustom}
-        title="🎶 EasyTunr"
+        title="🎵 EasyTunr"
         color="white"
         onPress={() => navigation.navigate("Home")}
       />
@@ -92,17 +95,17 @@ export default function App() {
         <>
           <Appbar.Action
             icon="microphone"
-            color="#FF6584"
+            color="#FFFFFF"
             onPress={() => navigation.navigate("Audio")}
           />
           <Appbar.Action
             icon="camera"
-            color="#FF6584"
+            color="#FFFFFF"
             onPress={() => navigation.navigate("Photo")}
           />
           <Appbar.Action
             icon="folder"
-            color="#FF6584"
+            color="#FFFFFF"
             onPress={() => navigation.navigate("Conversions")}
           />
           <Menu
@@ -111,7 +114,7 @@ export default function App() {
             anchor={
               <Appbar.Action
                 icon="account-circle"
-                color="#FF6584"
+                color="#FFFFFF"
                 onPress={() => setMenuVisible(true)}
               />
             }
@@ -127,38 +130,40 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6C63FF" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
   return (
-    <PaperProvider>
-      <NavigationContainer
-        ref={navigationRef}
-        key={user ? "logged-in" : "logged-out"}
-      >
-        <Stack.Navigator
-          initialRouteName={user ? "Home" : "Login"}
-          screenOptions={({ navigation }) => ({
-            header: () => <Header navigation={navigation} />,
-            headerTitleAlign: "center",
-          })}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PaperProvider>
+        <NavigationContainer
+          ref={navigationRef}
+          key={user ? "logged-in" : "logged-out"}
         >
-          <Stack.Screen
-            name="Login"
-            children={(props) => (
-              <LoginScreen {...props} onLoginSuccess={handleLoginSuccess} />
-            )}
-          />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Audio" component={AudioScreen} />
-          <Stack.Screen name="Photo" component={PhotoConverter} />
-          <Stack.Screen name="Conversions" component={ConversionsScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </PaperProvider>
+          <Stack.Navigator
+            initialRouteName={user ? "Home" : "Login"}
+            screenOptions={({ navigation }) => ({
+              header: () => <Header navigation={navigation} />,
+              headerTitleAlign: "center",
+            })}
+          >
+            <Stack.Screen
+              name="Login"
+              children={(props) => (
+                <LoginScreen {...props} onLoginSuccess={handleLoginSuccess} />
+              )}
+            />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Audio" component={AudioScreen} />
+            <Stack.Screen name="Photo" component={PhotoConverter} />
+            <Stack.Screen name="Conversions" component={ConversionsScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </PaperProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -167,16 +172,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 15,
-    backgroundColor: "#6C63FF",
-    height: 60,
+    paddingHorizontal: 14,
+    backgroundColor: "#5E3CD6",
+    height: 64,
+    borderBottomWidth: 1,
+    borderBottomColor: "#7B61DA",
   },
   headerTitleCustom: {
-    fontSize: 22,
-    fontWeight: "bold",
-    textShadowColor: "#232946",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 2,
+    fontSize: 20,
+    fontWeight: "700",
     paddingHorizontal: 8,
     paddingVertical: 2,
     overflow: "hidden",
@@ -211,5 +215,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: theme.colors.bg,
   },
 });

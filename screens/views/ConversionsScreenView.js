@@ -2,15 +2,27 @@ import React from "react";
 import {
   View,
   Text,
-  FlatList,
+  Pressable,
   TouchableOpacity,
   Image,
   Modal,
   ActivityIndicator,
-  Alert,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
+import DraggableFlatList from "react-native-draggable-flatlist";
+import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import styles from "../styles/ConversionsScreenStyle";
-import { SafeAreaView } from "react-native-web";
+import { apiUrl } from "../../lib/api";
+import GradientBackground from "../components/GradientBackground";
+import AnimatedEntrance from "../components/AnimatedEntrance";
 
 export default function ConversionsScreenView({
   conversions,
@@ -23,9 +35,50 @@ export default function ConversionsScreenView({
   handleLoadEnd,
   handleError,
   imageSource,
+  onDeleteSheet,
+  onReorder,
 }) {
-    const renderItem = ({ item }) => (
-    <View style={styles.card}>
+  const { width } = useWindowDimensions();
+  const numColumns = width < 700 ? 1 : width < 1060 ? 2 : 3;
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 150,
+        tolerance: 6,
+      },
+    })
+  );
+
+  const handleWebDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    const oldIndex = conversions.findIndex((c) => c.sheet_key === active.id);
+    const newIndex = conversions.findIndex((c) => c.sheet_key === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    onReorder(arrayMove(conversions, oldIndex, newIndex));
+  };
+
+  const renderCardContent = (item, drag, isActive, isWeb = false) => (
+    <View style={isActive ? styles.cardActive : null}>
+      <View style={styles.cardTopBar}>
+        <TouchableOpacity style={styles.dragHandle} onLongPress={drag} delayLongPress={120}>
+          <Text style={styles.dragHandleText}>:::</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={(e) => {
+            if (isWeb) {
+              e?.stopPropagation?.();
+              e?.preventDefault?.();
+            }
+            onDeleteSheet(item);
+          }}
+           onPressIn={(e) => {
+             e?.stopPropagation?.();
+           }}
+        >
+          <Text style={styles.deleteButtonText}>x</Text>
+        </TouchableOpacity>
+      </View>
       {item.type === "audio" ? (
         <View style={styles.audioIconContainer}>
           <Text style={styles.audioIcon}>🎵</Text>
@@ -35,13 +88,13 @@ export default function ConversionsScreenView({
           style={styles.image}
           onPress={() =>
             handleImagePress(
-              `http://192.168.1.13:5000/uploads/sheets/${item.filename}`
+              apiUrl(`/uploads/sheets/${item.filename}`)
             )
           }
         >
           <Image
             source={{
-              uri: `http://192.168.1.13:5000/uploads/sheets/${item.filename}`,
+              uri: apiUrl(`/uploads/sheets/${item.filename}`),
             }}
             style={styles.image}
             onError={(error) =>
@@ -80,57 +133,127 @@ export default function ConversionsScreenView({
     </View>
   );
 
-  
+  const renderItem = ({ item, drag, isActive }) => (
+    <Pressable
+      style={[
+        styles.card,
+        numColumns === 1 ? styles.cardSingle : null,
+        numColumns === 2 ? styles.cardCompact : null,
+      ]}
+      onLongPress={drag}
+      delayLongPress={120}
+    >
+      {renderCardContent(item, drag, isActive)}
+    </Pressable>
+  );
+
+  const WebSortableItem = ({ item }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+      id: item.sheet_key,
+    });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.65 : 1,
+      cursor: "grab",
+      touchAction: "none",
+    };
+
+    return (
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+        <View style={[styles.card, styles.cardWebGrid]}>{renderCardContent(item, null, isDragging, true)}</View>
+      </div>
+    );
+  };
+
   return (
-    <View style={styles.container}>
-        <Text style={styles.title}>Partituras Convertidas</Text>
-        <FlatList
-          data={conversions}
-          keyExtractor={(item, index) => index.toString()}
-          renderItem={renderItem}
-          numColumns={2}
-          columnWrapperStyle={styles.row}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No hay partituras convertidas.</Text>
-          }
-          contentContainerStyle={{
-            paddingBottom: 100,
-            flexGrow: 1,
-          }}
-//          style={{flexGrow: 0, flexShrink: 1, width: "100%"}}
-          scrollEnabled={true}
-          showsVerticalScrollIndicator={true}
-        />
+    <GradientBackground>
+      <View style={styles.container}>
+        <AnimatedEntrance delay={60}>
+          <Text style={styles.title}>Partituras Convertidas</Text>
+          {Platform.OS === "web" ? (
+            <>
+              {conversions.length === 0 ? (
+                <Text style={styles.emptyText}>No hay partituras convertidas.</Text>
+              ) : (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleWebDragEnd}>
+                  <SortableContext
+                    items={conversions.map((item) => item.sheet_key)}
+                    strategy={rectSortingStrategy}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: `repeat(${numColumns}, minmax(0, 1fr))`,
+                        gap: "12px",
+                        width: "100%",
+                      }}
+                    >
+                      {conversions.map((item) => (
+                        <WebSortableItem key={item.sheet_key} item={item} />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              )}
+            </>
+          ) : (
+            <DraggableFlatList
+              data={conversions}
+              key={`${numColumns}-cols`}
+              keyExtractor={(item) => item.sheet_key}
+              renderItem={renderItem}
+              onDragEnd={({ data }) => onReorder(data)}
+              numColumns={numColumns}
+              columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
+              activationDistance={4}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No hay partituras convertidas.</Text>
+              }
+              contentContainerStyle={{
+                paddingBottom: 100,
+                flexGrow: 1,
+              }}
+              scrollEnabled={conversions.length > 0}
+              showsVerticalScrollIndicator={true}
+            />
+          )}
+        </AnimatedEntrance>
         <Modal visible={!!selectedImage} transparent={true} animationType="fade">
           <View style={styles.modalContainer}>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={closeModal}>
+              <Text style={styles.modalCloseText}>x</Text>
+            </TouchableOpacity>
             <TouchableOpacity
-            style={styles.modalBackground}
-            onPress={closeModal}
-            activeOpacity={1}
-          >
-            {selectedImage &&
-              typeof selectedImage === "string" &&
-              selectedImage.trim() !== "" && (
-                <>
-                  <Image
-                    style={styles.modalImage}
-                    source={imageSource}
-                    onLoadStart={handleLoadStart}
-                    onLoadEnd={handleLoadEnd}
-                    onError={handleError}
-                  />
-                  {loadingImage && (
-                    <ActivityIndicator
-                      size="large"
-                      color="#fff"
-                      style={styles.activityIndicator}
+              style={styles.modalBackground}
+              onPress={closeModal}
+              activeOpacity={1}
+            >
+              {selectedImage &&
+                typeof selectedImage === "string" &&
+                selectedImage.trim() !== "" && (
+                  <>
+                    <Image
+                      style={styles.modalImage}
+                      source={imageSource}
+                      onLoadStart={handleLoadStart}
+                      onLoadEnd={handleLoadEnd}
+                      onError={handleError}
                     />
-                  )}
-                </>
-              )}
-          </TouchableOpacity>
-        </View>
-      </Modal>
-    </View>
+                    {loadingImage && (
+                      <ActivityIndicator
+                        size="large"
+                        color="#fff"
+                        style={styles.activityIndicator}
+                      />
+                    )}
+                  </>
+                )}
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      </View>
+    </GradientBackground>
   );
 }

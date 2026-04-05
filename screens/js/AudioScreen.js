@@ -4,6 +4,7 @@ import * as DocumentPicker from "expo-document-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import AudioScreenView from "../views/AudioScreenView";
 import { Alert } from "react-native";
+import { apiUrl } from "../../lib/api";
 
 const AudioScreen = ({ navigation }) => {
   const [recording, setRecording] = useState(null);
@@ -115,7 +116,7 @@ const AudioScreen = ({ navigation }) => {
       const blob = await file.blob();
       const formData = new FormData();
       formData.append("audio", blob, filename);
-      const response = await fetch("http://192.168.1.13:5000/upload/audio", {
+      const response = await fetch(apiUrl("/upload/audio"), {
         method: "POST",
         body: formData,
         headers: {
