@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Alert } from "react-native";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import ConversionsScreenView from "../views/ConversionsScreenView";
 import { apiUrl } from "../../lib/api";
+import { clearAuthSession, getValidAccessToken } from "../../lib/authSession";
 
 const getSheetKey = (item, index = 0) =>
   item?.sheet_key || item?.musicxml || item?.omr || item?.audio || item?.filename || `sheet-${index}`;
@@ -15,7 +15,11 @@ const ConversionsScreen = () => {
   useEffect(() => {
     const fetchConversions = async () => {
       try {
-        const token = await AsyncStorage.getItem("token");
+        const token = await getValidAccessToken();
+        if (!token) {
+          Alert.alert("Error", "Tu sesión expiró. Inicia sesión de nuevo.");
+          return;
+        }
         const response = await fetch(apiUrl("/sheets"), {
           method: "GET",
           headers: {
@@ -30,6 +34,9 @@ const ConversionsScreen = () => {
             sheet_key: getSheetKey(sheet, index),
           }));
           setConversions(normalized);
+        } else if (response.status === 401) {
+          await clearAuthSession();
+          Alert.alert("Sesión expirada", "Vuelve a iniciar sesión.");
         } else {
           Alert.alert("Error", "No se pudieron cargar las conversiones.");
         }
@@ -65,7 +72,11 @@ const ConversionsScreen = () => {
         return;
       }
 
-      const token = await AsyncStorage.getItem("token");
+      const token = await getValidAccessToken();
+      if (!token) {
+        Alert.alert("Error", "Tu sesión expiró. Inicia sesión de nuevo.");
+        return;
+      }
       const endpoint =
         type === "AUDIO"
           ? apiUrl(`/uploads/sheets/${filename}`)
@@ -100,6 +111,9 @@ const ConversionsScreen = () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+      } else if (response.status === 401) {
+        await clearAuthSession();
+        Alert.alert("Sesión expirada", "Vuelve a iniciar sesión.");
       } else {
         Alert.alert("Error", `No se pudo descargar el archivo ${type}.`);
       }
@@ -118,46 +132,89 @@ const ConversionsScreen = () => {
   }, []);
 
   const handleDeleteSheet = useCallback((item) => {
-    Alert.alert(
-      "Eliminar partitura",
-      `¿Seguro que quieres eliminar ${item.name || item.filename || "esta partitura"}?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: async () => {
-            setConversions((prev) => prev.filter((s) => s.sheet_key !== item.sheet_key));
-            try {
-              const token = await AsyncStorage.getItem("token");
-              const response = await fetch(
-                apiUrl(`/sheets/${encodeURIComponent(item.sheet_key)}`),
-                {
-                  method: "DELETE",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                }
-              );
+    const handleConfirmDelete = async () => {
+      setConversions((prev) => prev.filter((s) => s.sheet_key !== item.sheet_key));
+      try {
+        const token = await getValidAccessToken();
+        
+        if (!token || !token.trim()) {
+          throw new Error("No hay sesión activa. Por favor, inicia sesión de nuevo.");
+        }
 
-              if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data.error || "No se pudo eliminar la partitura.");
-              }
-            } catch (error) {
-              console.error("Error al eliminar partitura:", error);
-              Alert.alert("Aviso", "Se elimino visualmente, pero no se pudo sincronizar con servidor.");
-            }
+        const url = apiUrl(`/sheets/${encodeURIComponent(item.sheet_key)}`);
+        console.log("DELETE request:", { url, sheet_key: item.sheet_key, token_exists: !!token });
+        
+        const response = await fetch(url, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
-        },
-      ]
-    );
+        });
+
+        console.log("DELETE response:", { status: response.status, ok: response.ok });
+
+        if (!response.ok) {
+          let errorMsg = "No se pudo eliminar la partitura.";
+          try {
+            const data = await response.json();
+            errorMsg = data.error || data.message || errorMsg;
+          } catch (e) {
+            errorMsg = `Error ${response.status}: ${response.statusText}`;
+          }
+          if (response.status === 401) {
+            await clearAuthSession();
+          }
+          throw new Error(errorMsg);
+        }
+
+        console.log("Partitura eliminada correctamente:", item.sheet_key);
+      } catch (error) {
+        console.error("Error al eliminar partitura:", error);
+        // Revertir eliminación visual si falla
+        setConversions((prev) => [...prev, item]);
+        
+        const errorMsg = error.message || "Error desconocido al conectar con el servidor.";
+        
+        if (typeof window !== "undefined" && window.confirm) {
+          // En web, usar confirm
+          alert(`Error: ${errorMsg}`);
+        } else {
+          Alert.alert("Error", `No se pudo eliminar: ${errorMsg}`);
+        }
+      }
+    };
+
+    const sheetName = item.name || item.filename || "esta partitura";
+    if (typeof window !== "undefined" && window.confirm) {
+      // En web
+      if (window.confirm(`¿Seguro que quieres eliminar "${sheetName}"?`)) {
+        handleConfirmDelete();
+      }
+    } else {
+      // En React Native
+      Alert.alert(
+        "Eliminar partitura",
+        `¿Seguro que quieres eliminar ${sheetName}?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Eliminar",
+            style: "destructive",
+            onPress: handleConfirmDelete,
+          },
+        ]
+      );
+    }
   }, []);
 
   const handleReorder = useCallback(async (nextList) => {
     setConversions(nextList);
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await getValidAccessToken();
+      if (!token) {
+        throw new Error("No hay sesión activa.");
+      }
       const response = await fetch(apiUrl("/sheets/reorder"), {
         method: "PATCH",
         headers: {
@@ -170,6 +227,9 @@ const ConversionsScreen = () => {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          await clearAuthSession();
+        }
         throw new Error("No se pudo guardar el nuevo orden.");
       }
     } catch (error) {

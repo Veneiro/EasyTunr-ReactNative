@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoginScreenView from "../views/LoginScreenView";
 import { apiUrl } from "../../lib/api";
+import { saveAuthSession } from "../../lib/authSession";
 
 const LoginScreen = ({ navigation, onLoginSuccess }) => {
   const [email, setEmail] = useState("");
@@ -18,7 +18,7 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
 
       const data = await response.json();
       if (response.ok) {
-        await AsyncStorage.setItem("token", data.token);
+        await saveAuthSession(data.token, data.token_expires_in_seconds || 600);
         onLoginSuccess(data.email);
       } else {
         setErrorMessage(data.message || "Error desconocido. Intenta nuevamente.");

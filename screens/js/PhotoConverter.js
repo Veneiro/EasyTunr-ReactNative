@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Platform, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import PhotoConverterView from "../views/PhotoConverterView";
 import { apiUrl } from "../../lib/api";
+import { clearAuthSession, getValidAccessToken } from "../../lib/authSession";
 
 export default function PhotoConverter({ navigation }) {
   const [image, setImage] = useState(null);
@@ -49,7 +49,7 @@ export default function PhotoConverter({ navigation }) {
     formData.append("name", name.trim() !== "" ? name : filename);
 
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await getValidAccessToken();
       let response = await fetch(apiUrl("/upload/photo"), {
         method: "POST",
         body: formData,
@@ -57,6 +57,13 @@ export default function PhotoConverter({ navigation }) {
           Authorization: "Bearer " + (token || ""),
         },
       });
+
+      if (response.status === 401) {
+        await clearAuthSession();
+        navigation.reset({ index: 0, routes: [{ name: "Login" }] });
+        setUploading(false);
+        return;
+      }
 
       let result = await response.json();
       if (response.ok) {

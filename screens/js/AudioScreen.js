@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import AudioScreenView from "../views/AudioScreenView";
 import { Alert } from "react-native";
 import { apiUrl } from "../../lib/api";
+import { clearAuthSession, getValidAccessToken } from "../../lib/authSession";
 
 const AudioScreen = ({ navigation }) => {
   const [recording, setRecording] = useState(null);
@@ -97,7 +97,7 @@ const AudioScreen = ({ navigation }) => {
     }
     setLoading(true);
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await getValidAccessToken();
       if (!token) {
         Alert.alert("Error", "No se encontró un token de autenticación.");
         setLoading(false);
@@ -125,7 +125,7 @@ const AudioScreen = ({ navigation }) => {
       });
 
       if (response.status === 401) {
-        await AsyncStorage.removeItem("token");
+        await clearAuthSession();
         navigation.reset({ index: 0, routes: [{ name: "Login" }] });
         setLoading(false);
         return;
