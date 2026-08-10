@@ -10,8 +10,8 @@ import {
   useWindowDimensions,
   Platform,
 } from "react-native";
-import DraggableFlatList from "react-native-draggable-flatlist";
-import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
+import DraggableFlatList, { ScaleDecorator } from "react-native-draggable-flatlist";
+import { DndContext, MouseSensor, TouchSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
@@ -23,6 +23,8 @@ import styles from "../styles/ConversionsScreenStyle";
 import { apiUrl } from "../../lib/api";
 import GradientBackground from "../components/GradientBackground";
 import AnimatedEntrance from "../components/AnimatedEntrance";
+
+const stopPointerDown = (e) => e.stopPropagation();
 
 export default function ConversionsScreenView({
   conversions,
@@ -41,11 +43,11 @@ export default function ConversionsScreenView({
   const { width } = useWindowDimensions();
   const numColumns = width < 700 ? 1 : width < 1060 ? 2 : 3;
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        delay: 150,
-        tolerance: 6,
-      },
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
     })
   );
 
@@ -57,45 +59,57 @@ export default function ConversionsScreenView({
     onReorder(arrayMove(conversions, oldIndex, newIndex));
   };
 
-  const renderCardContent = (item, drag, isActive, isWeb = false) => (
+  const renderCardContent = (item, drag, isActive) => (
     <View style={isActive ? styles.cardActive : null}>
       <View style={styles.cardTopBar}>
-        <TouchableOpacity style={styles.dragHandle} onLongPress={drag} delayLongPress={120}>
-          <Text style={styles.dragHandleText}>:::</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={(e) => {
-            if (isWeb) {
-              e?.stopPropagation?.();
-              e?.preventDefault?.();
-            }
-            onDeleteSheet(item);
-          }}
-           onPressIn={(e) => {
-             e?.stopPropagation?.();
-           }}
-        >
-          <Text style={styles.deleteButtonText}>x</Text>
-        </TouchableOpacity>
+        {Platform.OS === "web" ? (
+          <div onPointerDown={stopPointerDown} style={{ display: "contents" }}>
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => onDeleteSheet(item)}
+            >
+              <Text style={styles.deleteButtonText}>x</Text>
+            </TouchableOpacity>
+          </div>
+        ) : (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => onDeleteSheet(item)}
+          >
+            <Text style={styles.deleteButtonText}>x</Text>
+          </TouchableOpacity>
+        )}
       </View>
       {item.type === "audio" ? (
         <View style={styles.audioIconContainer}>
           <Text style={styles.audioIcon}>🎵</Text>
         </View>
+      ) : item.filename?.toLowerCase().endsWith(".pdf") ? (
+        <View style={styles.audioIconContainer}>
+          <Text style={styles.audioIcon}>📄</Text>
+        </View>
+      ) : Platform.OS === "web" ? (
+        <div onPointerDown={stopPointerDown} style={{ display: "contents" }}>
+          <TouchableOpacity
+            style={styles.image}
+            onPress={() => handleImagePress(apiUrl(`/uploads/sheets/${item.filename}`))}
+          >
+            <Image
+              source={{ uri: apiUrl(`/uploads/sheets/${item.filename}`) }}
+              style={styles.image}
+              onError={(error) =>
+                console.error("Error al cargar la imagen:", error.nativeEvent.error)
+              }
+            />
+          </TouchableOpacity>
+        </div>
       ) : (
         <TouchableOpacity
           style={styles.image}
-          onPress={() =>
-            handleImagePress(
-              apiUrl(`/uploads/sheets/${item.filename}`)
-            )
-          }
+          onPress={() => handleImagePress(apiUrl(`/uploads/sheets/${item.filename}`))}
         >
           <Image
-            source={{
-              uri: apiUrl(`/uploads/sheets/${item.filename}`),
-            }}
+            source={{ uri: apiUrl(`/uploads/sheets/${item.filename}`) }}
             style={styles.image}
             onError={(error) =>
               console.error("Error al cargar la imagen:", error.nativeEvent.error)
@@ -107,26 +121,21 @@ export default function ConversionsScreenView({
         {item.name ? item.name : item.filename}
       </Text>
       <View style={styles.buttonContainer}>
-        {item.type === "audio" && (
+        {Platform.OS === "web" ? (
+          <div onPointerDown={stopPointerDown} style={{ display: "contents" }}>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => downloadFile(item.musicxml)}
+            >
+              <Text style={styles.buttonText}>Descargar XML</Text>
+            </TouchableOpacity>
+          </div>
+        ) : (
           <TouchableOpacity
             style={styles.button}
-            onPress={() => downloadFile(item.audio, "AUDIO")}
+            onPress={() => downloadFile(item.musicxml)}
           >
-            <Text style={styles.buttonText}>Descargar Audio</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => downloadFile(item.musicxml, "MXL")}
-        >
-          <Text style={styles.buttonText}>Descargar XML</Text>
-        </TouchableOpacity>
-        {item.omr && (
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => downloadFile(item.omr, "OMR")}
-          >
-            <Text style={styles.buttonText}>Descargar OMR</Text>
+            <Text style={styles.buttonText}>Descargar XML</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -134,17 +143,20 @@ export default function ConversionsScreenView({
   );
 
   const renderItem = ({ item, drag, isActive }) => (
-    <Pressable
-      style={[
-        styles.card,
-        numColumns === 1 ? styles.cardSingle : null,
-        numColumns === 2 ? styles.cardCompact : null,
-      ]}
-      onLongPress={drag}
-      delayLongPress={120}
-    >
-      {renderCardContent(item, drag, isActive)}
-    </Pressable>
+    <ScaleDecorator>
+      <Pressable
+        style={[
+          styles.card,
+          numColumns === 1 ? styles.cardSingle : null,
+          numColumns === 2 ? styles.cardCompact : null,
+        ]}
+        onLongPress={drag}
+        delayLongPress={120}
+        disabled={isActive}
+      >
+        {renderCardContent(item, drag, isActive)}
+      </Pressable>
+    </ScaleDecorator>
   );
 
   const WebSortableItem = ({ item }) => {
@@ -162,7 +174,7 @@ export default function ConversionsScreenView({
 
     return (
       <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-        <View style={[styles.card, styles.cardWebGrid]}>{renderCardContent(item, null, isDragging, true)}</View>
+        <View style={[styles.card, styles.cardWebGrid]}>{renderCardContent(item, null, isDragging)}</View>
       </div>
     );
   };
@@ -170,10 +182,10 @@ export default function ConversionsScreenView({
   return (
     <GradientBackground>
       <View style={styles.container}>
-        <AnimatedEntrance delay={60}>
-          <Text style={styles.title}>Partituras Convertidas</Text>
-          {Platform.OS === "web" ? (
-            <>
+        {Platform.OS === "web" ? (
+          <div style={{ height: "calc(100vh - 120px)", overflowY: "auto", paddingBottom: 100 }}>
+            <AnimatedEntrance delay={60}>
+              <Text style={styles.title}>Partituras Convertidas</Text>
               {conversions.length === 0 ? (
                 <Text style={styles.emptyText}>No hay partituras convertidas.</Text>
               ) : (
@@ -197,8 +209,10 @@ export default function ConversionsScreenView({
                   </SortableContext>
                 </DndContext>
               )}
-            </>
-          ) : (
+            </AnimatedEntrance>
+          </div>
+        ) : (
+          <AnimatedEntrance delay={60} style={{ flex: 1 }}>
             <DraggableFlatList
               data={conversions}
               key={`${numColumns}-cols`}
@@ -208,6 +222,7 @@ export default function ConversionsScreenView({
               numColumns={numColumns}
               columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
               activationDistance={4}
+              ListHeaderComponent={<Text style={styles.title}>Partituras Convertidas</Text>}
               ListEmptyComponent={
                 <Text style={styles.emptyText}>No hay partituras convertidas.</Text>
               }
@@ -218,8 +233,8 @@ export default function ConversionsScreenView({
               scrollEnabled={conversions.length > 0}
               showsVerticalScrollIndicator={true}
             />
-          )}
-        </AnimatedEntrance>
+          </AnimatedEntrance>
+        )}
         <Modal visible={!!selectedImage} transparent={true} animationType="fade">
           <View style={styles.modalContainer}>
             <TouchableOpacity style={styles.modalCloseButton} onPress={closeModal}>

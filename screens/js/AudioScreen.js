@@ -14,7 +14,7 @@ const AudioScreen = ({ navigation }) => {
 
   const startRecording = async () => {
     try {
-      const { status, canAskAgain } = await Audio.requestPermissionsAsync();
+      const { status } = await Audio.requestPermissionsAsync();
       if (status !== "granted") {
         Alert.alert(
           "Permiso denegado",
@@ -26,10 +26,8 @@ const AudioScreen = ({ navigation }) => {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
-        allowsRecordingAndroid: true,
       });
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync({
+      const { recording } = await Audio.Recording.createAsync({
         android: {
           extension: ".mp3",
           outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
@@ -50,7 +48,6 @@ const AudioScreen = ({ navigation }) => {
           linearPCMIsFloat: false,
         },
       });
-      await recording.startAsync();
       setRecording(recording);
     } catch (error) {
       Alert.alert("Error", `No se pudo iniciar la grabación: ${error.message}`);
@@ -144,10 +141,6 @@ const AudioScreen = ({ navigation }) => {
     setLoading(false);
   };
 
-  const convertToMusicXml = async () => {
-    await uploadAudio(audioUri);
-  };
-
   return (
     <AudioScreenView
       recording={recording}
@@ -155,7 +148,6 @@ const AudioScreen = ({ navigation }) => {
       startRecording={startRecording}
       stopRecording={stopRecording}
       pickAudioFile={pickAudioFile}
-      convertToMusicXml={convertToMusicXml}
       loading={loading}
       uploadAudio={uploadAudio}
     />

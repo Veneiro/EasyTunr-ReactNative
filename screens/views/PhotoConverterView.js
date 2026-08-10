@@ -9,8 +9,12 @@ export default function PhotoConverterView({
   image,
   name,
   setName,
+  isPdf,
   uploading,
+  uploadPhase,
+  elapsedSeconds,
   pickImage,
+  pickPdf,
   takePhoto,
   uploadImage,
   fileInputRef,
@@ -26,7 +30,14 @@ export default function PhotoConverterView({
           {uploading ? (
             <>
               <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={{ color: theme.colors.text, marginTop: 10 }}>Subiendo imagen...</Text>
+              <Text style={styles.uploadStatusTitle}>Procesando tu partitura</Text>
+              <Text style={styles.uploadStatusText}>{uploadPhase || "Trabajando..."}</Text>
+              <Text style={styles.uploadElapsedText}>Tiempo transcurrido: {elapsedSeconds}s</Text>
+              {elapsedSeconds >= 45 && (
+                <Text style={styles.uploadHintText}>
+                  Primeras ejecuciones pueden tardar por descarga/carga de modelos.
+                </Text>
+              )}
             </>
           ) : (
             <>
@@ -38,30 +49,41 @@ export default function PhotoConverterView({
               />
               <View style={styles.buttonRow}>
                 <TouchableOpacity style={styles.button} onPress={pickImage}>
-                  <Text style={styles.buttonText}>📁 Seleccionar Archivo</Text>
+                  <Text style={styles.buttonText}>🖼️ Seleccionar Imagen</Text>
                 </TouchableOpacity>
                 {Platform.OS !== "web" && (
                   <TouchableOpacity style={styles.button} onPress={takePhoto}>
                     <Text style={styles.buttonText}>📷 Tomar Foto</Text>
                   </TouchableOpacity>
                 )}
+                {Platform.OS !== "web" && (
+                  <TouchableOpacity style={styles.button} onPress={pickPdf}>
+                    <Text style={styles.buttonText}>📄 Seleccionar PDF</Text>
+                  </TouchableOpacity>
+                )}
               </View>
               {Platform.OS === "web" && (
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   ref={fileInputRef}
                   style={{ display: "none" }}
                   onChange={onFileChange}
                 />
               )}
-              {image && <Image source={{ uri: image }} style={styles.image} />}
+              {image && !isPdf && <Image source={{ uri: image }} style={styles.image} />}
+              {image && isPdf && (
+                <View style={styles.pdfPlaceholder}>
+                  <Text style={styles.pdfPlaceholderIcon}>📄</Text>
+                  <Text style={styles.pdfPlaceholderText}>{image}</Text>
+                </View>
+              )}
               {image && (
                 <TouchableOpacity
                   style={[styles.button, { marginTop: 20, width: "100%", maxWidth: 360 }]}
                   onPress={uploadImage}
                 >
-                  <Text style={styles.buttonText}>Subir Imagen</Text>
+                  <Text style={styles.buttonText}>{isPdf ? "Subir PDF" : "Subir Imagen"}</Text>
                 </TouchableOpacity>
               )}
             </>

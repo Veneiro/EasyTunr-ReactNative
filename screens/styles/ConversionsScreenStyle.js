@@ -57,23 +57,9 @@ export default StyleSheet.create({
   cardTopBar: {
     width: "100%",
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
     marginBottom: 8,
-  },
-  dragHandle: {
-    backgroundColor: "#00000012",
-    width: 28,
-    height: 24,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dragHandleText: {
-    color: theme.colors.muted,
-    fontWeight: "700",
-    fontSize: 12,
-    letterSpacing: 1,
   },
   deleteButton: {
     backgroundColor: theme.colors.danger,
