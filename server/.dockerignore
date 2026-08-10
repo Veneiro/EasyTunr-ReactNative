@@ -9,6 +9,7 @@ uploads/
 datasets/
 artifacts/
 train/
+clarity/
 *.pt
 *.pth
 *.onnx

@@ -39,11 +39,14 @@ Archivo `server/.env`:
 ```env
 MONGO_URI=mongodb://localhost:27017/easytunr
 JWT_SECRET_KEY=tu_clave_super_secreta
-OMR_ENGINE=custom-omr
+OMR_ENGINE=clarity-omr
+OMR_DEVICE=cpu
+OMR_CLARITY_REPO_PATH=C:\ruta\a\Clarity-OMR
+OMR_CLARITY_PYTHON=python
+OMR_CLARITY_FAST=true
 OMR_MODEL_WEIGHTS=
 OMR_CONFIDENCE=0.25
-OMR_DEVICE=cpu
-OMR_SEQ2SEQ_MODEL_ID=
+OMR_SEQ2SEQ_MODEL_ID=clquwu/Clarity-OMR
 OMR_SEQ2SEQ_MAX_NEW_TOKENS=256
 OMR_SEQ2SEQ_NUM_BEAMS=2
 OMR_STAFF_PROJECTION_FACTOR=0.55
@@ -51,10 +54,9 @@ OMR_STAFF_PROJECTION_FACTOR=0.55
 
 Notas:
 
-- Si `OMR_MODEL_WEIGHTS` esta vacio, el backend usa fallback heuristico.
-- Cuando tengas un `best.pt`, solo actualiza `OMR_MODEL_WEIGHTS` y reinicia.
-- Para conversion estable y editable en MuseScore, usa `OMR_ENGINE=custom-omr`.
-- El modo `seq2seq` es opcional/experimental y requiere un modelo OMR realmente compatible.
+- `OMR_ENGINE=clarity-omr` ahora ejecuta el flujo oficial del repo `clquwu/Clarity-OMR` (deteccion de pentagramas + reconocimiento + export MusicXML).
+- Debes clonar ese repo y configurar `OMR_CLARITY_REPO_PATH`.
+- Si `OMR_ENGINE` es distinto a `clarity-omr`, se usa el pipeline interno de EasyTunr.
 
 ## 4. Flujo OMR en API
 
@@ -128,3 +130,27 @@ Que se descarga automaticamente la primera vez:
 - Si activas `seq2seq`, tambien se descargan pesos del modelo en `OMR_SEQ2SEQ_MODEL_ID`.
 
 No tienes que entrenar ningun modelo localmente.
+
+## 7. Clarity-OMR como flujo principal
+
+1. Clona el repo oficial:
+
+```bash
+git clone https://github.com/clquwu/Clarity-OMR.git
+cd Clarity-OMR
+pip install -r requirements.txt
+```
+
+2. Configura EasyTunr:
+
+```env
+OMR_ENGINE=clarity-omr
+OMR_DEVICE=cpu
+OMR_CLARITY_REPO_PATH=C:\ruta\a\Clarity-OMR
+OMR_CLARITY_PYTHON=python
+OMR_CLARITY_FAST=true
+```
+
+3. Reinicia backend.
+
+Con esto, `POST /upload/photo` ejecuta `omr.py` del proyecto Clarity-OMR y guarda el MusicXML real generado por ese modelo en `uploads/conversions/`.

@@ -55,7 +55,11 @@ if [[ "${1:-}" == "--build" ]]; then
 fi
 
 echo "[INFO] Levantando servicios con Docker Compose..."
-docker compose up ${BUILD_FLAG} -d
+if [[ -n "$BUILD_FLAG" ]]; then
+  docker compose up ${BUILD_FLAG} -d
+else
+  docker compose up --no-build -d
+fi
 
 echo "[OK] Servicios levantados"
 echo "API:    http://localhost:5000"
