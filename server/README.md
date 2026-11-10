@@ -1,6 +1,6 @@
 # EasyTunr Server
 
-Backend Flask con autenticacion JWT, conversion OMR y export a MusicXML.
+Backend Flask con autenticacion JWT, conversion imagen/audio a MusicXML y MongoDB.
 
 ## 1. Ejecucion recomendada (WSL + Docker)
 
@@ -10,121 +10,60 @@ Desde la raiz del repo:
 bash ./wsl-up.sh
 ```
 
-URLs:
-
 - API: http://localhost:5000
 - Swagger UI: http://localhost:5000/docs
 - OpenAPI JSON: http://localhost:5000/openapi.json
 
-Parar servicios:
+Docker Compose lee `server/.env` y sobrescribe `MONGO_URI` para apuntar al contenedor `mongo`.
 
-```bash
-bash ./wsl-down.sh
-```
+## 2. Ejecucion local sin Docker
 
-## 2. Ejecucion local sin Docker (solo backend)
+Requiere MongoDB corriendo en local y Python 3.10-3.12 (rango que admite oemer).
 
 ```bash
 cd server
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env     # y rellena JWT_SECRET_KEY
 python server.py
 ```
 
-## 3. Variables de entorno
+`server.py` lee `server/.env` aunque lo lances desde otra carpeta.
 
-Archivo `server/.env`:
+## 3. Variables de entorno (`server/.env`)
 
-```env
-MONGO_URI=mongodb://localhost:27017/easytunr
-JWT_SECRET_KEY=tu_clave_super_secreta
-OMR_ENGINE=custom-omr
-OMR_MODEL_WEIGHTS=
-OMR_CONFIDENCE=0.25
-OMR_DEVICE=cpu
-OMR_SEQ2SEQ_MODEL_ID=
-OMR_SEQ2SEQ_MAX_NEW_TOKENS=256
-OMR_SEQ2SEQ_NUM_BEAMS=2
-OMR_STAFF_PROJECTION_FACTOR=0.55
-```
+| Variable | Descripcion |
+|----------|-------------|
+| `MONGO_URI` | Cadena de conexion a MongoDB |
+| `JWT_SECRET_KEY` | Secreto para firmar los JWT (>= 32 caracteres) |
+| `JWT_ACCESS_TOKEN_EXPIRES_SECONDS` | Vida del access token (por defecto 600) |
+| `FLASK_DEBUG` | `1` activa el modo debug al usar `python server.py` |
 
-Notas:
+## 4. Endpoints
 
-- Si `OMR_MODEL_WEIGHTS` esta vacio, el backend usa fallback heuristico.
-- Cuando tengas un `best.pt`, solo actualiza `OMR_MODEL_WEIGHTS` y reinicia.
-- Para conversion estable y editable en MuseScore, usa `OMR_ENGINE=custom-omr`.
-- El modo `seq2seq` es opcional/experimental y requiere un modelo OMR realmente compatible.
+| Metodo | Ruta | Auth | Descripcion |
+|--------|------|------|-------------|
+| GET | `/health` | - | Estado del servicio |
+| POST | `/register` | - | Crear usuario |
+| POST | `/login` | - | Devuelve un access token |
+| POST | `/auth/refresh` | JWT | Renueva un token que aun no ha caducado |
+| GET | `/user` | JWT | Email del usuario actual |
+| POST | `/upload/photo` | JWT | Imagen a MusicXML (asincrono, devuelve `task_id`) |
+| POST | `/upload/audio` | JWT | Audio a MusicXML (asincrono, devuelve `task_id`) |
+| GET | `/conversion_status/<task_id>` | JWT | Estado de una conversion |
+| GET | `/sheets` | JWT | Partituras del usuario |
+| PATCH | `/sheets/reorder` | JWT | Reordenar partituras |
+| DELETE | `/sheets/<sheet_key>` | JWT | Borrar una partitura y sus archivos |
+| GET | `/uploads/sheets/<filename>` | JWT | Archivo original (imagen/audio) |
+| GET | `/uploads/conversions/<filename>` | JWT | MusicXML / metadatos generados |
 
-## 4. Flujo OMR en API
+## 5. Flujo de conversion
 
-Endpoint principal: `POST /upload/photo`
+1. El archivo subido se guarda en `uploads/` con un nombre UUID.
+2. Un hilo en segundo plano convierte el archivo (ver [docs/OEMER_INTEGRATION.md](../docs/OEMER_INTEGRATION.md)).
+3. El resultado se guarda en `uploads/conversions/` y la entrada se anade a `users.sheets` en MongoDB.
+4. El original se conserva, porque la app lo muestra y lo reproduce. Se borra al eliminar la partitura o si la conversion falla.
 
-Pipeline:
-
-1. Guarda imagen en `server/uploads/`.
-2. Ejecuta transcripcion OMR.
-3. Guarda `*.omr.json` y `*.musicxml` en `server/uploads/conversions/`.
-4. Guarda metadata en MongoDB (`users.sheets`).
-
-## 5. Integrar modelo externo (.pt)
-
-El entrenamiento se hace fuera del repo (por ejemplo en Google Colab).
-Cuando tengas `best.pt`:
-
-1. Guarda el archivo en una ruta estable (local o dentro de `server/`).
-2. Configura en `server/.env`:
-
-```env
-OMR_MODEL_WEIGHTS=C:\ruta\a\best.pt
-OMR_CONFIDENCE=0.25
-OMR_DEVICE=cpu
-```
-
-3. Reinicia backend.
-
-## 6. Usar enfoque CRNN/Pixel2Sequence (sin entrenamiento local)
-
-Tambien puedes usar un modelo preentrenado de tipo image-to-sequence (staff-wise).
-
-Configura en `server/.env`:
-
-```env
-OMR_ENGINE=seq2seq
-OMR_SEQ2SEQ_MODEL_ID=tu-org/tu-modelo-omr
-OMR_DEVICE=cuda
-OMR_SEQ2SEQ_MAX_NEW_TOKENS=256
-OMR_SEQ2SEQ_NUM_BEAMS=2
-OMR_STAFF_PROJECTION_FACTOR=0.55
-```
-
-Notas practicas:
-
-- El pipeline segmenta por pentagramas para reducir consumo de memoria.
-- El endpoint sigue siendo `POST /upload/photo`.
-- Si la secuencia no se puede parsear a notas, se aplica fallback heuristico para mantener salida MusicXML.
-- El parser actual admite tokens como `C4`, `D#5:q`, `Eb4:0.5`.
-
-### Arranque rapido recomendado (estable)
-
-1. Instala dependencias del backend:
-
-```bash
-cd server
-python -m pip install -r requirements.txt
-```
-
-2. Arranca el servidor:
-
-```bash
-python server.py
-```
-
-3. Sube una imagen a `POST /upload/photo` desde la app.
-
-Que se descarga automaticamente la primera vez:
-
-- Paquetes Python de `requirements.txt` (incluye `torch`, `transformers`, `Pillow`).
-- Si activas `seq2seq`, tambien se descargan pesos del modelo en `OMR_SEQ2SEQ_MODEL_ID`.
-
-No tienes que entrenar ningun modelo localmente.
+Limitacion conocida: el estado de las tareas (`conversion_tasks`) vive en memoria, asi que se
+pierde al reiniciar y solo funciona con 1 worker de gunicorn (como esta configurado ahora).

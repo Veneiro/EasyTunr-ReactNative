@@ -1,7 +1,6 @@
 import os
 from datetime import datetime, timedelta
 import json
-import subprocess
 from bson import ObjectId
 from dotenv import dotenv_values
 from flask import Flask, request, jsonify, send_from_directory, Response, send_file
@@ -16,14 +15,14 @@ from flask_jwt_extended import (
     jwt_required,
 )
 import librosa
+import numpy as np
 from pymongo.errors import ServerSelectionTimeoutError
-from music21 import stream, note, midi, converter
+from music21 import stream, note
 from PIL import Image
 import threading
 import uuid
 
-from omr.pipeline import OMRPipeline, OMRPipelineConfig
-from omr.musicxml import write_musicxml, write_score_to_musicxml
+from omr.pipeline import OMRPipeline
 
 app = Flask(__name__)
 CORS(app, 
@@ -40,14 +39,14 @@ UPLOAD_FOLDER = os.path.join(basedir, "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(os.path.join(UPLOAD_FOLDER, "conversions"), exist_ok=True)
 
-config = {**dotenv_values(".env"), **os.environ}
+config = {**dotenv_values(os.path.join(basedir, ".env")), **os.environ}
 
 app.config["MONGO_URI"] = config.get("MONGO_URI")
 app.config["JWT_SECRET_KEY"] = config.get("JWT_SECRET_KEY")
 
 # Configure access token lifetime (seconds) via env JWT_ACCESS_TOKEN_EXPIRES_SECONDS
 try:
-    expires_seconds = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_SECONDS", "600"))
+    expires_seconds = int(config.get("JWT_ACCESS_TOKEN_EXPIRES_SECONDS", "600"))
 except ValueError:
     expires_seconds = 600
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(seconds=expires_seconds)
@@ -280,14 +279,6 @@ def build_openapi_spec():
                     },
                 }
             },
-            "/users": {
-                "get": {
-                    "summary": "Listado de usuarios",
-                    "responses": {
-                        "200": {"description": "Listado devuelto"}
-                    },
-                }
-            },
             "/auth/refresh": {
                 "post": {
                     "summary": "Refrescar token de acceso",
@@ -493,16 +484,8 @@ def swagger_docs():
     return Response(SWAGGER_UI_HTML, mimetype="text/html")
 
 
-@app.route("/users", methods=["GET"])
-def get_users():
-    users = list(mongo.db.users.find())
-    return jsonify({"users": [normalize_sheet(u) for u in users]})
-
-
 # Guardar archivo con un nombre único
 def save_image_file_with_unique_name(file):
-    import uuid
-
     extension = os.path.splitext(file.filename)[1]
     if not extension:
         extension = ".jpg"
@@ -512,26 +495,11 @@ def save_image_file_with_unique_name(file):
     return file_path, unique_filename
 
 def save_audio_file_with_unique_name(file):
-    import uuid
-
     extension = os.path.splitext(file.filename)[1] or ".wav"
     unique_filename = f"{uuid.uuid4()}{extension}"
     file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
     file.save(file_path)
     return file_path, unique_filename
-
-
-@app.before_request
-def log_authorization_header():
-    # Debug helper: log presence of Authorization header for troubleshooting 401s
-    try:
-        auth = request.headers.get("Authorization")
-        if auth:
-            app.logger.info("Authorization header present (trimmed): %s", auth[:100])
-        else:
-            app.logger.info("No Authorization header present in request")
-    except Exception:
-        pass
 
 
 # JWT error handlers for clearer debugging responses
@@ -549,7 +517,7 @@ def jwt_invalid_token_callback(callback_msg):
 
 @jwt.expired_token_loader
 def jwt_expired_token_callback(header, payload):
-    app.logger.warning("JWT expired token: headers=%s payload=%s", header, payload)
+    app.logger.info("JWT expired token for user=%s", payload.get("sub"))
     return jsonify({"error": "token_expired", "message": "Token has expired"}), 401
 
 
@@ -577,7 +545,6 @@ conversion_tasks_lock = threading.Lock()
 @jwt_required()
 def upload():
     current_user_id = get_jwt_identity()
-    app.logger.info("/upload/audio called: headers=%s files=%s form=%s", dict(request.headers), list(request.files.keys()), dict(request.form))
     if "audio" not in request.files:
         return jsonify({"error": "No file part"}), 400
 
@@ -630,10 +597,9 @@ def _process_audio_conversion_task(current_user_id, audio_file_path, original_na
                     "result": {"musicxml_url": f"/uploads/conversions/{musicxml_filename}"}
                 }
         except Exception as e:
-            app.logger.error(f"Task {task_id} Error: {str(e)}")
+            app.logger.error("Task %s Error: %s", task_id, e, exc_info=True)
             with conversion_tasks_lock:
                 conversion_tasks[task_id] = {"status": "failed", "message": str(e)}
-        finally:
             if os.path.exists(audio_file_path):
                 os.remove(audio_file_path)
 
@@ -694,10 +660,9 @@ def _process_omr_conversion_task(current_user_id, photo_path, original_name, uni
                     "result": {"musicxml_url": f"/uploads/conversions/{musicxml_filename}"}
                 }
         except Exception as e:
-            app.logger.error(f"Task {task_id} Error: {str(e)}")
+            app.logger.error("Task %s Error: %s", task_id, e, exc_info=True)
             with conversion_tasks_lock:
                 conversion_tasks[task_id] = {"status": "failed", "message": str(e)}
-        finally:
             if os.path.exists(photo_path):
                 os.remove(photo_path)
 
@@ -732,144 +697,106 @@ def refresh_access_token():
     )
 
 
-def is_binary_mxl(filepath):
-    """Detecta si un archivo es un MusicXML comprimido (ZIP) buscando el header 'PK'."""
-    try:
-        with open(filepath, 'rb') as f:
-            return f.read(2) == b'PK'
-    except Exception:
-        return False
+CONVERSIONS_FOLDER = os.path.join(UPLOAD_FOLDER, "conversions")
+OMR_MAX_IMAGE_SIDE = 2500
+
+# Parametros de la transcripcion de audio (melodia monofonica)
+AUDIO_SAMPLE_RATE = 22050
+AUDIO_HOP_LENGTH = 512
+AUDIO_TEMPO_BPM = 120
+AUDIO_MIN_NOTE_SECONDS = 0.08
+
 
 def convert_image_to_musicxml(image_path):
-    output_folder = os.path.join(UPLOAD_FOLDER, "conversions")
-    os.makedirs(output_folder, exist_ok=True)
-
+    """Imagen de partitura -> (omr_json_filename, musicxml_filename) en uploads/conversions."""
+    os.makedirs(CONVERSIONS_FOLDER, exist_ok=True)
     base = os.path.splitext(os.path.basename(image_path))[0]
     omr_file = f"{base}.omr.json"
+    musicxml_file = f"{base}.musicxml"
+    musicxml_path = os.path.join(CONVERSIONS_FOLDER, musicxml_file)
 
-    omr_path = os.path.join(output_folder, omr_file)
-
-    # Optimización: Redimensionar imagen para mejorar velocidad de Oemer
+    # Reducir imagenes muy grandes acelera mucho oemer sin perder precision util.
     with Image.open(image_path) as img:
-        if max(img.size) > 2500:
-            img.thumbnail((2500, 2500), Image.Resampling.LANCZOS)
+        if max(img.size) > OMR_MAX_IMAGE_SIDE:
+            img.thumbnail((OMR_MAX_IMAGE_SIDE, OMR_MAX_IMAGE_SIDE), Image.Resampling.LANCZOS)
             img.save(image_path)
 
-    result = omr_pipeline.transcribe(image_path)
-    try:
-        app.logger.info("OMR result keys: %s", list(result.keys()))
-        app.logger.info(
-            "OMR result types: musicxml_path=%s teaser_path=%s",
-            result.get("musicxml_path"),
-            result.get("teaser_path"),
-        )
-        app.logger.info("OMR result status: %s", result.get("status"))
-        if result.get("stderr"):
-            app.logger.warning("OMR stderr: %s", result.get("stderr"))
-    except Exception:
-        pass
+    result = omr_pipeline.transcribe(image_path, musicxml_path)  # lanza OMRError si falla
 
-    # Guardar metadatos de la conversión para la lista de partituras.
-    with open(omr_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=True, indent=2)
+    metadata = {
+        "engine": result["engine"],
+        "source_image": os.path.basename(image_path),
+        "musicxml": musicxml_file,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+    }
+    with open(os.path.join(CONVERSIONS_FOLDER, omr_file), "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=True, indent=2)
 
-    musicxml_source = result.get("musicxml_path")
-    app.logger.info(
-        "Checking musicxml: source=%s exists=%s",
-        musicxml_source,
-        os.path.isfile(musicxml_source) if musicxml_source else False
-    )
-    
-    if not musicxml_source:
-        app.logger.error("OMR pipeline did not return musicxml_path. Result: %s", result)
-        raise RuntimeError(f"OMR pipeline no devolvió musicxml_path para {image_path}")
-    
-    if not os.path.isfile(musicxml_source):
-        app.logger.error(
-            "MusicXML file not found. Expected: %s. Available files in %s: %s",
-            musicxml_source,
-            os.path.dirname(musicxml_source),
-            os.listdir(os.path.dirname(musicxml_source)) if os.path.isdir(os.path.dirname(musicxml_source)) else "dir doesn't exist"
-        )
-        raise RuntimeError(f"OMR no generó MusicXML en {musicxml_source}")
+    return omr_file, musicxml_file
 
-    # Si NO es binario, forzamos .musicxml (texto plano)
-    is_zip = is_binary_mxl(musicxml_source)
-    actual_ext = ".mxl" if is_zip else ".musicxml"
-    
-    mxl_file = f"{base}{actual_ext}"
-    mxl_path = os.path.join(output_folder, mxl_file)
 
-    import shutil
-    shutil.copyfile(musicxml_source, mxl_path)
-    
-    return omr_file, mxl_file
+def _frames_to_segments(midi_frames, frame_seconds):
+    """Agrupa frames consecutivos con la misma nota MIDI (None = silencio)."""
+    segments = []  # [midi | None, segundos]
+    for value in midi_frames:
+        if segments and segments[-1][0] == value:
+            segments[-1][1] += frame_seconds
+        else:
+            segments.append([value, frame_seconds])
+
+    # Fusionar segmentos demasiado cortos (ruido / transiciones) con el anterior.
+    merged = []
+    for value, seconds in segments:
+        if merged and (seconds < AUDIO_MIN_NOTE_SECONDS or merged[-1][0] == value):
+            merged[-1][1] += seconds
+        else:
+            merged.append([value, seconds])
+    return merged
+
 
 def convert_audio_to_musicxml(audio_path):
-    #audio_path = ensure_wav(audio_path)
-    output_folder = os.path.join(UPLOAD_FOLDER, "conversions")
-    os.makedirs(output_folder, exist_ok=True)
-    base_filename = os.path.splitext(os.path.basename(audio_path))[0]
-    output_csv = os.path.join(output_folder, f"{base_filename}_melodia.csv")
-    xml_path = os.path.join(output_folder, f"{base_filename}.musicxml")
+    """Audio (melodia monofonica) -> musicxml_filename en uploads/conversions.
 
-    # En Docker/Linux, asumimos que sonic-annotator está en el PATH
-    sonic_annotator_path = "sonic-annotator"
-    melodia_plugin = "vamp:mtg-melodia:melodia"
-    
-    try:
-        with open(output_csv, "w") as out_csv:
-            subprocess.run([
-                sonic_annotator_path,
-                "-d", melodia_plugin,
-                audio_path,
-                "-w", "csv",
-                "--csv-stdout"
-            ], check=True, stdout=out_csv)
-    except Exception as e:
-        print(f"Error ejecutando sonic-annotator: {e}")
-        raise
-    
-    # 2. Procesa el CSV para extraer las notas
-    times = []
-    freqs = []
-    with open(output_csv, "r") as f:
-        for line in f:
-            parts = line.strip().split(",")
-            if len(parts) >= 2:
-                try:
-                    time = float(parts[1])
-                    freq = float(parts[2])
-                    if freq > 0:
-                        times.append(time)
-                        freqs.append(freq)
-                except ValueError:
-                    continue
+    Usa pYIN (librosa) para estimar la frecuencia fundamental frame a frame,
+    la redondea a semitonos y cuantiza las duraciones a semicorcheas a AUDIO_TEMPO_BPM.
+    """
+    os.makedirs(CONVERSIONS_FOLDER, exist_ok=True)
+    base = os.path.splitext(os.path.basename(audio_path))[0]
+    musicxml_file = f"{base}.musicxml"
 
-    # 3. Crea el MusicXML con music21
+    y, sr = librosa.load(audio_path, sr=AUDIO_SAMPLE_RATE, mono=True)
+    if y.size == 0:
+        raise ValueError("El archivo de audio esta vacio")
+
+    f0, voiced_flag, _ = librosa.pyin(
+        y,
+        fmin=librosa.note_to_hz("C2"),
+        fmax=librosa.note_to_hz("C7"),
+        sr=sr,
+        hop_length=AUDIO_HOP_LENGTH,
+    )
+    midi_frames = [
+        int(round(librosa.hz_to_midi(hz))) if voiced and not np.isnan(hz) else None
+        for hz, voiced in zip(f0, voiced_flag)
+    ]
+    segments = _frames_to_segments(midi_frames, AUDIO_HOP_LENGTH / sr)
+
+    quarter_seconds = 60.0 / AUDIO_TEMPO_BPM
     s = stream.Stream()
-    if freqs:
-        last_freq = freqs[0]
-        duration_count = 0
-        for freq in freqs:
-            if abs(freq - last_freq) < 1.0:
-                duration_count += 1
-            else:
-                n = note.Note()
-                n.pitch.frequency = last_freq
-                n.quarterLength = max(0.25, 0.05 * duration_count)
-                s.append(n)
-                last_freq = freq
-                duration_count = 1
-        n = note.Note()
-        n.pitch.frequency = last_freq
-        n.quarterLength = max(0.25, 0.05 * duration_count)
-        s.append(n)
+    for midi_value, seconds in segments:
+        quarter_length = max(0.25, round(seconds / quarter_seconds * 4) / 4)
+        if midi_value is None:
+            if s.notes:  # sin silencios iniciales
+                s.append(note.Rest(quarterLength=quarter_length))
+        else:
+            s.append(note.Note(midi=midi_value, quarterLength=quarter_length))
 
-    print("Saving MusicXML to:", xml_path)
-    s.write('musicxml', fp=xml_path)
-    print("MusicXML saved.")
-    return os.path.basename(xml_path)
+    if not s.notes:
+        raise ValueError("No se detecto ninguna melodia en el audio")
+
+    s.write("musicxml", fp=os.path.join(CONVERSIONS_FOLDER, musicxml_file))
+    return musicxml_file
+
 
 @app.route("/sheets", methods=["GET"])
 @jwt_required()
@@ -1086,4 +1013,5 @@ def login():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    debug = str(config.get("FLASK_DEBUG", "0")).lower() in ("1", "true", "yes")
+    app.run(host="0.0.0.0", port=int(config.get("PORT", "5000")), debug=debug)

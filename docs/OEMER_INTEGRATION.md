@@ -1,292 +1,58 @@
-# Integración de Oemer OMR
+# Conversiones a MusicXML
 
-Guía sobre la integración del motor OCR de partituras **oemer** en EasyTunr.
+EasyTunr tiene dos conversiones, las dos asincronas y las dos implementadas en `server/server.py`.
 
-## Estado de la Integración
+## Imagen a MusicXML (oemer)
 
-✅ **Completada**:
-- `omr/pipeline.py`: Método `_transcribe_oemer()` implementado
-- `omr/musicxml.py`: Nuevas funciones para exportar scores de music21 directamente
-- `server/server.py`: Endpoint `/upload/photo` actualizado para manejar scores de oemer
-- Fallback automático a otros motores si oemer falla
+`POST /upload/photo` (multipart, campo `photo`) y despues `convert_image_to_musicxml()`:
 
-## Flujo de Conversión de Imagen
+1. Si la imagen mide mas de 2500 px por lado, se reduce (oemer va mucho mas rapido y no pierde precision util).
+2. `OMRPipeline.transcribe()` (`server/omr/pipeline.py`) ejecuta el CLI `oemer` en un directorio temporal
+   y mueve el `.musicxml` resultante a `uploads/conversions/{uuid}.musicxml`. Las imagenes intermedias se descartan.
+3. Se guarda `uploads/conversions/{uuid}.omr.json` con metadatos (motor, imagen de origen y fecha).
+4. Si oemer falla, no esta instalado o tarda mas de 300 s, se lanza `OMRError` y la tarea queda en `failed`
+   con un mensaje legible.
 
-```
-1. Cliente sube imagen
-   ↓
-2. POST /upload/photo → uploadPhoto()
-   ↓
-3. convert_image_to_musicxml(image_path)
-   ├─ omr_pipeline.transcribe(image_path)
-   │  └─ _transcribe_oemer(image_path)
-   │     └─ oemer.ete.extract(image_path)
-   │        └─ Retorna: music21.stream.Score
-   ├─ Guardar Score en result["score"]
-   ├─ Extraer notas: score_to_notes(score)
-   ├─ Guardar JSON metadatos (sin objeto Score)
-   └─ Exportar MusicXML: write_score_to_musicxml(score, output_path)
-   ↓
-4. MongoDB registra conversión
-   ├─ sheets.insert_one({ omr_file, mxl_file, engine: "oemer", ... })
-   └─ Retorna URLs de descarga
-   ↓
-5. Cliente obtiene MusicXML + JSON de metadata
-```
+Notas:
 
-## Configuración
+- La primera ejecucion de oemer descarga sus checkpoints (unos cientos de MB). Tarda, y vuelve a descargarlos
+  si se reconstruye la imagen Docker.
+- oemer necesita Python 3.10-3.12. En Windows nativo suele dar problemas, asi que es mejor usar Docker o WSL.
+- Funciona mejor con partituras impresas, bien iluminadas y rectas.
 
-### Variables de Entorno
+## Audio a MusicXML (librosa pYIN)
 
-En `server/.env`:
+`POST /upload/audio` (multipart, campo `audio`) y despues `convert_audio_to_musicxml()`:
+
+1. `librosa.load` a 22050 Hz mono. Formatos comprimidos como m4a/mp3 necesitan ffmpeg, que ya viene en el Dockerfile.
+2. `librosa.pyin` estima la frecuencia fundamental frame a frame (rango C2-C7).
+3. Cada frame se redondea al semitono MIDI mas cercano. Los frames consecutivos iguales se agrupan en notas,
+   y los fragmentos de menos de 80 ms se fusionan con la nota anterior.
+4. Las duraciones se cuantizan a semicorcheas a 120 BPM y se escriben con music21.
+
+Solo es fiable con melodias **monofonicas** (voz, silbido o un instrumento solo). Los parametros estan en las
+constantes `AUDIO_*` al principio de esas funciones.
+
+## Probar a mano
 
 ```bash
-# Motor OMR (oemer, seq2seq, custom-omr)
-OMR_ENGINE=oemer
+TOKEN=$(curl -s -X POST http://localhost:5000/login -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"123456"}' | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
 
-# Dispositivo de cómputo (cpu, cuda)
-OMR_DEVICE=cpu
+curl -X POST http://localhost:5000/upload/photo -H "Authorization: Bearer $TOKEN" -F "photo=@partitura.png"
+# -> {"task_id": "...", "status": "pending"}
 
-# Factor de proyección de pentagramas (0.1-0.95)
-OMR_STAFF_PROJECTION_FACTOR=0.55
+curl http://localhost:5000/conversion_status/<task_id> -H "Authorization: Bearer $TOKEN"
+# -> {"status": "completed", "result": {"musicxml_url": "/uploads/conversions/<uuid>.musicxml"}}
+
+curl -o resultado.musicxml http://localhost:5000/uploads/conversions/<uuid>.musicxml -H "Authorization: Bearer $TOKEN"
 ```
 
-**Nota**: El código fuente en `server.py` (línea ~67) define el default como `oemer`. Si quieres cambiar, modifica:
-- `.env` (si ejecutas localmente con `python server.py`)
-- Docker: `docker-compose.yml` con `-e OMR_ENGINE=...`
+El `.musicxml` se puede abrir en MuseScore, Finale o Sibelius.
 
-### Instalación de Dependencias
+## Proximas mejoras
 
-```bash
-cd server
-pip install -r requirements.txt
-
-# oemer ya está en requirements.txt, pero verifica:
-pip install oemer music21
-```
-
-## API Reference
-
-### POST /upload/photo
-
-Convierte una imagen de partitura a MusicXML.
-
-**Request:**
-```http
-POST /upload/photo HTTP/1.1
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: multipart/form-data
-
-photo=<binary_image_file>
-name=<display_name>
-```
-
-**Response (200 OK):**
-```json
-{
-  "message": "Upload and conversion successful",
-  "sheet": {
-    "_id": "...",
-    "user_email": "user@example.com",
-    "name": "Sheet 1",
-    "omr_file": "base.omr.json",
-    "mxl_file": "base.musicxml",
-    "engine": "oemer",
-    "created_at": "2024-01-01T12:00:00Z"
-  }
-}
-```
-
-**Response (400 Bad Request):**
-```json
-{
-  "message": "Photo and name are required"
-}
-```
-
-### Archivos Generados
-
-Se guardan en `uploads/conversions/`:
-
-- **`{base}.omr.json`**: Metadatos de la conversión
-  ```json
-  {
-    "engine": "oemer",
-    "status": "success",
-    "notes": [
-      {"pitch": "C4", "duration": 1.0},
-      {"pitch": "D4", "duration": 0.5},
-      ...
-    ]
-  }
-  ```
-
-- **`{base}.musicxml`**: Archivo MusicXML estándar (abre en MuseScore, Finale, etc.)
-
-## Código Relevante
-
-### Funciones Principales
-
-#### `server/omr/pipeline.py`
-
-```python
-def _transcribe_oemer(self, image_path):
-    """Procesa imagen con oemer, retorna Score y notas."""
-    from oemer.ete import extract
-    from omr.musicxml import score_to_notes
-    
-    score = extract(image_path)
-    notes = score_to_notes(score)
-    
-    return {
-        "engine": "oemer",
-        "status": "success",
-        "notes": notes,
-        "score": score  # Para exportar directamente a MusicXML
-    }
-```
-
-#### `server/omr/musicxml.py`
-
-```python
-def write_score_to_musicxml(score_obj, output_path, title="..."):
-    """Exporta un music21.Score directamente a MusicXML."""
-    if not score_obj.metadata:
-        score_obj.metadata = metadata.Metadata(title=title, composer="EasyTunr (oemer)")
-    score_obj.write("musicxml", fp=output_path)
-
-def score_to_notes(score_obj):
-    """Extrae notas del Score para compatibilidad con pipeline."""
-    notes_list = []
-    for n in score_obj.flatten().notes:
-        if isinstance(n, note.Note):
-            notes_list.append({
-                "pitch": n.pitch.nameWithOctave,
-                "duration": float(n.quarterLength)
-            })
-    return notes_list
-```
-
-#### `server/server.py`
-
-```python
-def convert_image_to_musicxml(image_path):
-    """Convierte imagen → MusicXML usando engine configurado."""
-    result = omr_pipeline.transcribe(image_path)
-    
-    score_obj = result.pop("score", None)
-    
-    # Guardar JSON sin objeto Score
-    with open(omr_path, "w") as f:
-        json.dump(result, f)
-    
-    # Exportar a MusicXML
-    if score_obj is not None:
-        write_score_to_musicxml(score_obj, mxl_path, title=base)
-    else:
-        write_musicxml(result.get("notes", []), mxl_path, title=base)
-```
-
-## Pruebas
-
-### Test Manual
-
-1. **Levanta el backend:**
-   ```bash
-   cd server
-   docker-compose up
-   # O localmente:
-   # python server.py (requiere MongoDB)
-   ```
-
-2. **Autenticate:**
-   ```bash
-   curl -X POST http://localhost:5000/login \
-     -H "Content-Type: application/json" \
-     -d '{"email":"test@example.com","password":"123456"}'
-   
-   # Obtén el JWT_TOKEN
-   ```
-
-3. **Sube una imagen:**
-   ```bash
-   curl -X POST http://localhost:5000/upload/photo \
-     -H "Authorization: Bearer <JWT_TOKEN>" \
-     -F "photo=@test_score.png" \
-     -F "name=Test Sheet"
-   ```
-
-4. **Descarga el resultado:**
-   ```bash
-   # Obtendrás omr_file y mxl_file del response anterior
-   curl http://localhost:5000/uploads/conversions/filename.musicxml > result.musicxml
-   ```
-
-5. **Abre en MuseScore/Finale:**
-   - [MuseScore](https://musescore.com) (gratuito)
-   - Finale
-   - Sibelius
-   - Notion
-
-### Test Automático
-
-```bash
-cd server
-python -c "
-from omr.pipeline import OMRPipeline, OMRPipelineConfig
-config = OMRPipelineConfig(engine='oemer', device='cpu')
-pipeline = OMRPipeline(config)
-result = pipeline.transcribe('test_score.png')
-print('Notas:', len(result['notes']))
-print('Engine:', result['engine'])
-print('Status:', result['status'])
-"
-```
-
-## Troubleshooting
-
-### Error: "No se puede importar oemer"
-```
-pip install oemer
-# Si falla en Windows, intenta desde WSL/Docker
-```
-
-### Error: "No se pudo cargar la imagen"
-- Verifica que el archivo sea PNG/JPG válido
-- Tamaño mínimo: ~100x100px
-- Máximo: ~5000x5000px (performance)
-
-### MusicXML vacío o sin notas
-- Oemer requiere partituras claras en formato estándar
-- Prueba con partitura escaneada de calidad
-- Verifica `uploads/conversions/{base}.omr.json` para debugging
-
-### MongoDB desconectado (503 error)
-```bash
-docker-compose up mongo  # Levanta solo MongoDB
-# O localmente: mongod --dbpath ~/data/mongo
-```
-
-## Motor Anterior (custom-omr)
-
-El motor basado en YOLO sigue disponible. Para usarlo:
-
-1. En `server/.env`:
-   ```
-   OMR_ENGINE=custom-omr
-   ```
-
-2. Coloca pesos del modelo en `server/omr/models/` (o usa los default)
-
-3. O fuerza en código:
-   ```python
-   config = OMRPipelineConfig(engine="custom-omr", ...)
-   ```
-
-## Próximas Mejoras
-
-- [ ] GUI para seleccionar motor OMR
-- [ ] Corrección manual de notas antes de guardar
-- [ ] Validación de pentagramas incompletos
-- [ ] Exportar a otros formatos (MIDI, LilyPond, MNX)
-- [ ] Batch conversion
+- [ ] Persistir el estado de las tareas (MongoDB) para poder usar varios workers
+- [ ] Detectar el tempo del audio en lugar de fijar 120 BPM
+- [ ] Correccion manual de notas antes de guardar
+- [ ] Exportar a MIDI

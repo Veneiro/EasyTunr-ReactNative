@@ -45,9 +45,13 @@ if ! docker image inspect python:3.11-slim >/dev/null 2>&1; then
   docker tag mirror.gcr.io/library/python:3.11-slim python:3.11-slim
 fi
 
-export JWT_SECRET_KEY="${JWT_SECRET_KEY:-dev-only-change-me}"
-export OMR_CONFIDENCE="${OMR_CONFIDENCE:-0.25}"
-export OMR_DEVICE="${OMR_DEVICE:-cpu}"
+# server/.env no se versiona: si no existe, se crea desde la plantilla con un secreto aleatorio.
+if [[ ! -f server/.env ]]; then
+  echo "[INFO] Creando server/.env a partir de server/.env.example..."
+  secret="$(head -c 48 /dev/urandom | base64 | tr -d '/+=
+')"
+  sed "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${secret}|" server/.env.example > server/.env
+fi
 
 BUILD_FLAG=""
 if [[ "${1:-}" == "--build" ]]; then

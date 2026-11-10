@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Alert } from "react-native";
 import ConversionsScreenView from "../views/ConversionsScreenView";
 import { apiUrl } from "../../lib/api";
 import { clearAuthSession, getValidAccessToken } from "../../lib/authSession";
+import { fetchAuthImageDataUri } from "../../lib/authImage";
 
 const getSheetKey = (item, index = 0) =>
   item?.sheet_key || item?.musicxml || item?.omr || item?.audio || item?.filename || `sheet-${index}`;
@@ -248,8 +249,27 @@ const ConversionsScreen = () => {
     []
   );
 
-  const imageSource = useMemo(() => {
-    return selectedImage ? { uri: selectedImage } : undefined;
+  // selectedImage es la ruta protegida (/uploads/sheets/...); se descarga con el token.
+  const [imageSource, setImageSource] = useState(undefined);
+  useEffect(() => {
+    if (!selectedImage) {
+      setImageSource(undefined);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchAuthImageDataUri(selectedImage)
+      .then((uri) => {
+        if (!cancelled) setImageSource({ uri });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        Alert.alert("Error", "No se pudo cargar la imagen.");
+        setSelectedImage(null);
+        setLoadingImage(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedImage]);
 
   return (

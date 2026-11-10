@@ -30,7 +30,9 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+!.env.example
 
 # Python
 .venv/
@@ -46,8 +48,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# (solo carpetas de build de Python en server/, NO el lib/ del frontend)
+/server/lib/
+/server/lib64/
 parts/
 sdist/
 var/

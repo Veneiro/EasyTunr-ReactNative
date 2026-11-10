@@ -20,7 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import styles from "../styles/ConversionsScreenStyle";
-import { apiUrl } from "../../lib/api";
+import AuthImage from "../components/AuthImage";
 import GradientBackground from "../components/GradientBackground";
 import AnimatedEntrance from "../components/AnimatedEntrance";
 
@@ -86,21 +86,9 @@ export default function ConversionsScreenView({
       ) : (
         <TouchableOpacity
           style={styles.image}
-          onPress={() =>
-            handleImagePress(
-              apiUrl(`/uploads/sheets/${item.filename}`)
-            )
-          }
+          onPress={() => handleImagePress(`/uploads/sheets/${item.filename}`)}
         >
-          <Image
-            source={{
-              uri: apiUrl(`/uploads/sheets/${item.filename}`),
-            }}
-            style={styles.image}
-            onError={(error) =>
-              console.error("Error al cargar la imagen:", error.nativeEvent.error)
-            }
-          />
+          <AuthImage path={`/uploads/sheets/${item.filename}`} style={styles.image} />
         </TouchableOpacity>
       )}
       <Text style={styles.cardTitle}>
@@ -234,13 +222,15 @@ export default function ConversionsScreenView({
                 typeof selectedImage === "string" &&
                 selectedImage.trim() !== "" && (
                   <>
-                    <Image
-                      style={styles.modalImage}
-                      source={imageSource}
-                      onLoadStart={handleLoadStart}
-                      onLoadEnd={handleLoadEnd}
-                      onError={handleError}
-                    />
+                    {imageSource && (
+                      <Image
+                        style={styles.modalImage}
+                        source={imageSource}
+                        onLoadStart={handleLoadStart}
+                        onLoadEnd={handleLoadEnd}
+                        onError={handleError}
+                      />
+                    )}
                     {loadingImage && (
                       <ActivityIndicator
                         size="large"
