@@ -47,6 +47,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!/lib/
 lib64/
 parts/
 sdist/
@@ -60,3 +61,11 @@ pip-wheel-metadata/
 # Project specific
 server/uploads/
 server/.env
+
+# Clarity-OMR: se versiona el código, no los pesos (se descargan de HuggingFace
+# clquwu/Clarity-OMR a server/clarity/info/ en la primera ejecución).
+server/clarity/info/
+server/clarity/*.safetensors
+server/clarity/*.pt
+server/clarity/output/
+server/clarity/uploads/
