@@ -1,0 +1,12 @@
+# Acceso a la GPU NVIDIA para el reconocimiento OMR.
+# Requiere NVIDIA Container Toolkit (ver wsl-setup-gpu.sh). wsl-up.sh lo añade
+# automáticamente cuando Docker tiene el runtime de NVIDIA.
+services:
+  server:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

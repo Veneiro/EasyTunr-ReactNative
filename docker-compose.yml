@@ -18,6 +18,8 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-cu126}
     container_name: easytunr-server
     depends_on:
       mongo:
@@ -25,17 +27,12 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017/easytunr
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
-      OMR_ENGINE: ${OMR_ENGINE:-clarity-omr}
-      OMR_DEVICE: ${OMR_DEVICE:-cpu}
+      # auto: usa la GPU si el contenedor la ve (docker-compose.gpu.yml), si no CPU.
+      OMR_DEVICE: ${OMR_DEVICE:-auto}
       OMR_CLARITY_REPO_PATH: ${OMR_CLARITY_REPO_PATH:-/app/clarity}
       OMR_CLARITY_PYTHON: ${OMR_CLARITY_PYTHON:-python}
       OMR_CLARITY_FAST: ${OMR_CLARITY_FAST:-true}
-      OMR_MODEL_WEIGHTS: ${OMR_MODEL_WEIGHTS:-}
-      OMR_CONFIDENCE: ${OMR_CONFIDENCE:-0.25}
-      OMR_SEQ2SEQ_MODEL_ID: ${OMR_SEQ2SEQ_MODEL_ID:-clquwu/Clarity-OMR}
-      OMR_SEQ2SEQ_MAX_NEW_TOKENS: ${OMR_SEQ2SEQ_MAX_NEW_TOKENS:-256}
-      OMR_SEQ2SEQ_NUM_BEAMS: ${OMR_SEQ2SEQ_NUM_BEAMS:-2}
-      OMR_STAFF_PROJECTION_FACTOR: ${OMR_STAFF_PROJECTION_FACTOR:-0.55}
+      OMR_TIMEOUT_SECONDS: ${OMR_TIMEOUT_SECONDS:-1200}
       PORT: ${PORT:-5000}
     ports:
       - "5000:5000"
@@ -43,6 +40,7 @@ services:
       - ./server/uploads:/app/uploads
       - ./server/clarity:/app/clarity
       - ./server/server.py:/app/server.py
+      - ./server/omr:/app/omr
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"]
       interval: 15s

@@ -20,9 +20,13 @@ RUN apt-get update \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Índice de PyTorch: cu126 (GPU NVIDIA, también funciona en CPU) o cpu (imagen ~5 GB más ligera).
+ARG TORCH_INDEX=cu126
+
 COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip \
+    && pip install --index-url https://download.pytorch.org/whl/${TORCH_INDEX} torch torchvision \
     && pip install --prefer-binary -r requirements.txt
 
 COPY . .

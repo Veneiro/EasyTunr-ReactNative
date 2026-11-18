@@ -46,8 +46,15 @@ if ! docker image inspect python:3.11-slim >/dev/null 2>&1; then
 fi
 
 export JWT_SECRET_KEY="${JWT_SECRET_KEY:-dev-only-change-me}"
-export OMR_CONFIDENCE="${OMR_CONFIDENCE:-0.25}"
-export OMR_DEVICE="${OMR_DEVICE:-cpu}"
+export OMR_DEVICE="${OMR_DEVICE:-auto}"
+
+COMPOSE_FILES=(-f docker-compose.yml)
+if docker info 2>/dev/null | grep -qi "runtimes:.*nvidia"; then
+  echo "[INFO] GPU NVIDIA disponible: el OMR usara CUDA."
+  COMPOSE_FILES+=(-f docker-compose.gpu.yml)
+else
+  echo "[INFO] Sin runtime NVIDIA en Docker: el OMR usara CPU (ver wsl-setup-gpu.sh)."
+fi
 
 BUILD_FLAG=""
 if [[ "${1:-}" == "--build" ]]; then
@@ -56,9 +63,9 @@ fi
 
 echo "[INFO] Levantando servicios con Docker Compose..."
 if [[ -n "$BUILD_FLAG" ]]; then
-  docker compose up ${BUILD_FLAG} -d
+  docker compose "${COMPOSE_FILES[@]}" up ${BUILD_FLAG} -d
 else
-  docker compose up --no-build -d
+  docker compose "${COMPOSE_FILES[@]}" up --no-build -d
 fi
 
 echo "[OK] Servicios levantados"
