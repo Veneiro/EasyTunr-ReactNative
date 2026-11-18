@@ -1,0 +1,27 @@
+{
+  "model_type": "clarity-omr",
+  "architectures": [
+    "DaViT_RoPE_Decoder"
+  ],
+  "pipeline": {
+    "stage_a": {
+      "model": "yolo.pt",
+      "architecture": "YOLOv8m",
+      "task": "staff_detection"
+    },
+    "stage_b": {
+      "model": "model.safetensors",
+      "architecture": "DaViT encoder + custom RoPE decoder",
+      "encoder": "davit_base.msft_in1k",
+      "encoder_dim": 768,
+      "decoder_dim": 768,
+      "decoder_layers": 8,
+      "decoder_heads": 12,
+      "max_decode_length": 512,
+      "vocab_size": 487,
+      "adaptation": "DoRA",
+      "dora_rank": 64,
+      "task": "staff_recognition"
+    }
+  }
+}
