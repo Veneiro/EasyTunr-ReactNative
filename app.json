@@ -6,6 +6,15 @@
     "newArchEnabled": true,
     "web": {
       "favicon": "./assets/favicon-note.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "EasyTunr usa la cámara para fotografiar partituras y transcribirlas.",
+          "photosPermission": "EasyTunr accede a tus fotos para transcribir partituras."
+        }
+      ]
+    ]
   }
 }

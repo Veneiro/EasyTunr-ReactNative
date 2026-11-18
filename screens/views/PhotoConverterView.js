@@ -18,6 +18,7 @@ export default function PhotoConverterView({
   takePhoto,
   uploadImage,
   fileInputRef,
+  cameraInputRef,
   onFileChange,
   webFile,
 }) {
@@ -51,11 +52,9 @@ export default function PhotoConverterView({
                 <TouchableOpacity style={styles.button} onPress={pickImage}>
                   <Text style={styles.buttonText}>🖼️ Seleccionar Imagen</Text>
                 </TouchableOpacity>
-                {Platform.OS !== "web" && (
-                  <TouchableOpacity style={styles.button} onPress={takePhoto}>
-                    <Text style={styles.buttonText}>📷 Tomar Foto</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity style={styles.button} onPress={takePhoto}>
+                  <Text style={styles.buttonText}>📷 Tomar Foto</Text>
+                </TouchableOpacity>
                 {Platform.OS !== "web" && (
                   <TouchableOpacity style={styles.button} onPress={pickPdf}>
                     <Text style={styles.buttonText}>📄 Seleccionar PDF</Text>
@@ -70,6 +69,22 @@ export default function PhotoConverterView({
                   style={{ display: "none" }}
                   onChange={onFileChange}
                 />
+              )}
+              {Platform.OS === "web" && (
+                // En navegadores móviles, capture abre directamente la cámara trasera.
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  ref={cameraInputRef}
+                  style={{ display: "none" }}
+                  onChange={onFileChange}
+                />
+              )}
+              {!image && (
+                <Text style={styles.uploadHintText}>
+                  Consejo: fotografía la partitura de frente, bien iluminada y sin sombras, con todo el ancho de los pentagramas visible.
+                </Text>
               )}
               {image && !isPdf && <Image source={{ uri: image }} style={styles.image} />}
               {image && isPdf && (
