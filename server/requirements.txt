@@ -12,6 +12,12 @@ opencv-python>=4.10.0.84,<5.0.0
 numpy>=1.26.4,<3.0.0
 PyYAML>=6.0.2,<7.0.0
 gunicorn>=22.0.0,<23.0.0
+# Audio -> MusicXML (pYIN)
+librosa>=0.10.2.post1,<0.11.0
+numpy>=1.26.4,<3.0.0
+music21>=9.3.0,<10.0.0
+# Imagen -> MusicXML (oemer trae opencv/onnxruntime como dependencias)
+oemer>=0.1.8
 Pillow>=10.4.0,<11.0.0
 
 # Clarity-OMR (server/clarity): stage A (YOLO) + stage B (DaViT + decoder).

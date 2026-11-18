@@ -1,6 +1,6 @@
 # EasyTunr Server
 
-Backend Flask con autenticacion JWT, conversion OMR y export a MusicXML.
+Backend Flask con autenticacion JWT, conversion imagen/audio a MusicXML y MongoDB.
 
 ## 1. Ejecucion recomendada (WSL + Docker)
 
@@ -10,31 +10,28 @@ Desde la raiz del repo:
 bash ./wsl-up.sh
 ```
 
-URLs:
-
 - API: http://localhost:5000
 - Swagger UI: http://localhost:5000/docs
 - OpenAPI JSON: http://localhost:5000/openapi.json
 
-Parar servicios:
+Docker Compose lee `server/.env` y sobrescribe `MONGO_URI` para apuntar al contenedor `mongo`.
 
-```bash
-bash ./wsl-down.sh
-```
+## 2. Ejecucion local sin Docker
 
-## 2. Ejecucion local sin Docker (solo backend)
+Requiere MongoDB corriendo en local y Python 3.10-3.12 (rango que admite oemer).
 
 ```bash
 cd server
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env     # y rellena JWT_SECRET_KEY
 python server.py
 ```
 
-## 3. Variables de entorno
+`server.py` lee `server/.env` aunque lo lances desde otra carpeta.
 
-Archivo `server/.env`:
+## 3. Variables de entorno (`server/.env`)
 
 ```env
 MONGO_URI=mongodb://localhost:27017/easytunr
@@ -52,15 +49,18 @@ OMR_SEQ2SEQ_NUM_BEAMS=2
 OMR_STAFF_PROJECTION_FACTOR=0.55
 ```
 
-Notas:
+## 4. Endpoints
 
 - `OMR_ENGINE=clarity-omr` ahora ejecuta el flujo oficial del repo `clquwu/Clarity-OMR` (deteccion de pentagramas + reconocimiento + export MusicXML).
 - Debes clonar ese repo y configurar `OMR_CLARITY_REPO_PATH`.
 - Si `OMR_ENGINE` es distinto a `clarity-omr`, se usa el pipeline interno de EasyTunr.
 
-## 4. Flujo OMR en API
+## 5. Flujo de conversion
 
-Endpoint principal: `POST /upload/photo`
+1. El archivo subido se guarda en `uploads/` con un nombre UUID.
+2. Un hilo en segundo plano convierte el archivo (ver [docs/OEMER_INTEGRATION.md](../docs/OEMER_INTEGRATION.md)).
+3. El resultado se guarda en `uploads/conversions/` y la entrada se anade a `users.sheets` en MongoDB.
+4. El original se conserva, porque la app lo muestra y lo reproduce. Se borra al eliminar la partitura o si la conversion falla.
 
 Pipeline:
 

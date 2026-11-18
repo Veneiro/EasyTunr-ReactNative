@@ -1,27 +1,9 @@
-# 📚 Documentación - EasyTunr
-
-Índice de documentación del proyecto.
-
-## 📖 Guías
+# Documentación - EasyTunr
 
 | Documento | Descripción |
 |-----------|-------------|
-| **PROJECT_STRUCTURE.md** | Estructura del proyecto, tech stack, endpoints |
-| **OEMER_INTEGRATION.md** | Motor OCR de partituras: API, configuración, troubleshooting |
+| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | Estructura del proyecto y tech stack |
+| [OEMER_INTEGRATION.md](OEMER_INTEGRATION.md) | Cómo funcionan las conversiones imagen/audio a MusicXML |
+| [../server/README.md](../server/README.md) | Backend: variables de entorno y endpoints |
 
-## 🚀 Quick Start
-
-```bash
-# Backend + MongoDB
-docker-compose up
-
-# Frontend (otra terminal)
-npm expo start
-```
-
-## 🔗 Links Útiles
-
-- Backend: http://localhost:5000
-- API Health: http://localhost:5000/health
-- MongoDB: localhost:27017
-
+Para arrancar el proyecto, mira el [README principal](../README.md).
