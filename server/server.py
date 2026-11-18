@@ -18,7 +18,7 @@ from flask_jwt_extended import (
 import librosa
 from pymongo.errors import ServerSelectionTimeoutError
 from music21 import stream, note, midi, converter
-from PIL import Image
+from PIL import Image, ImageOps
 import threading
 import uuid
 
@@ -572,6 +572,8 @@ def get_user():
 conversion_tasks = {}
 conversion_tasks_lock = threading.Lock()
 
+OMR_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".pdf"}
+
 
 @app.route("/upload/audio", methods=["POST"])
 @jwt_required()
@@ -647,12 +649,16 @@ def uploadPhoto():
         return jsonify({"message": "Falta el archivo de foto"}), 400
     
     photo = request.files["photo"]
-    original_name = photo.filename
+    extension = os.path.splitext(photo.filename or "")[1].lower()
+    if extension and extension not in OMR_ALLOWED_EXTENSIONS:
+        return jsonify({"message": "Formato no soportado. Sube una imagen (JPG, PNG) o un PDF."}), 400
+
+    original_name = (request.form.get("name") or "").strip() or photo.filename
     photo_path, unique_filename = save_image_file_with_unique_name(photo)
-    
+
     task_id = str(uuid.uuid4())
     with conversion_tasks_lock:
-        conversion_tasks[task_id] = {"status": "pending", "message": "Imagen recibida, iniciando OMR..."}
+        conversion_tasks[task_id] = {"status": "pending", "message": "Archivo recibido, en cola para el reconocimiento..."}
 
     thread = threading.Thread(
         target=_process_omr_conversion_task,
@@ -669,7 +675,10 @@ def uploadPhoto():
 def _process_omr_conversion_task(current_user_id, photo_path, original_name, unique_filename, task_id):
     with app.app_context():
         with conversion_tasks_lock:
-            conversion_tasks[task_id] = {"status": "processing", "message": "Procesando imagen..."}
+            conversion_tasks[task_id] = {
+                "status": "processing",
+                "message": "Detectando pentagramas y transcribiendo notas (puede tardar unos minutos)...",
+            }
         try:
             omr_filename, musicxml_filename = convert_image_to_musicxml(photo_path)
             
@@ -749,60 +758,46 @@ def convert_image_to_musicxml(image_path):
 
     omr_path = os.path.join(output_folder, omr_file)
 
-    # Optimización: Redimensionar imagen para mejorar velocidad de Oemer
-    with Image.open(image_path) as img:
-        if max(img.size) > 2500:
-            img.thumbnail((2500, 2500), Image.Resampling.LANCZOS)
-            img.save(image_path)
+    # Los PDF los renderiza Clarity directamente. Para las imágenes: aplicar la
+    # rotación EXIF de las fotos de móvil y limitar el tamaño a ~300 DPI de un A4,
+    # la resolución con la que se entrenó Clarity.
+    if not image_path.lower().endswith(".pdf"):
+        try:
+            with Image.open(image_path) as img:
+                normalized = ImageOps.exif_transpose(img).convert("RGB")
+        except Exception as exc:
+            os.remove(image_path)
+            raise RuntimeError("Formato de imagen no soportado. Usa una imagen JPG o PNG.") from exc
+        if max(normalized.size) > 3500:
+            normalized.thumbnail((3500, 3500), Image.Resampling.LANCZOS)
+        normalized_path = os.path.join(os.path.dirname(image_path), f"{base}.png")
+        normalized.save(normalized_path)
+        if normalized_path != image_path:
+            os.remove(image_path)
+            image_path = normalized_path
 
-    result = omr_pipeline.transcribe(image_path)
     try:
-        app.logger.info("OMR result keys: %s", list(result.keys()))
-        app.logger.info(
-            "OMR result types: musicxml_path=%s teaser_path=%s",
-            result.get("musicxml_path"),
-            result.get("teaser_path"),
-        )
-        app.logger.info("OMR result status: %s", result.get("status"))
-        if result.get("stderr"):
-            app.logger.warning("OMR stderr: %s", result.get("stderr"))
-    except Exception:
-        pass
+        result = omr_pipeline.transcribe(image_path)
+    finally:
+        if os.path.exists(image_path):
+            os.remove(image_path)
+
+    app.logger.info("OMR result status: %s", result.get("status"))
+    if result.get("stderr"):
+        app.logger.warning("OMR stderr: %s", result.get("stderr"))
+
+    if result.get("status") != "success":
+        raise RuntimeError(result.get("error") or "La conversión OMR falló.")
 
     # Guardar metadatos de la conversión para la lista de partituras.
     with open(omr_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=True, indent=2)
 
-    musicxml_source = result.get("musicxml_path")
-    app.logger.info(
-        "Checking musicxml: source=%s exists=%s",
-        musicxml_source,
-        os.path.isfile(musicxml_source) if musicxml_source else False
-    )
-    
-    if not musicxml_source:
-        app.logger.error("OMR pipeline did not return musicxml_path. Result: %s", result)
-        raise RuntimeError(f"OMR pipeline no devolvió musicxml_path para {image_path}")
-    
-    if not os.path.isfile(musicxml_source):
-        app.logger.error(
-            "MusicXML file not found. Expected: %s. Available files in %s: %s",
-            musicxml_source,
-            os.path.dirname(musicxml_source),
-            os.listdir(os.path.dirname(musicxml_source)) if os.path.isdir(os.path.dirname(musicxml_source)) else "dir doesn't exist"
-        )
-        raise RuntimeError(f"OMR no generó MusicXML en {musicxml_source}")
-
-    # Si NO es binario, forzamos .musicxml (texto plano)
-    is_zip = is_binary_mxl(musicxml_source)
-    actual_ext = ".mxl" if is_zip else ".musicxml"
-    
+    musicxml_source = result["musicxml_path"]
+    actual_ext = ".mxl" if is_binary_mxl(musicxml_source) else ".musicxml"
     mxl_file = f"{base}{actual_ext}"
-    mxl_path = os.path.join(output_folder, mxl_file)
+    os.replace(musicxml_source, os.path.join(output_folder, mxl_file))
 
-    import shutil
-    shutil.copyfile(musicxml_source, mxl_path)
-    
     return omr_file, mxl_file
 
 def convert_audio_to_musicxml(audio_path):
